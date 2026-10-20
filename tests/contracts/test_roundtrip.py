@@ -24,6 +24,7 @@ from meridian.contracts import (
     EventPage,
     EventView,
     FailureSample,
+    GroundingViolation,
     IncidentCase,
     InjectedFault,
     LineageResult,
@@ -332,6 +333,12 @@ def test_round_trip_covers_every_contract_model() -> None:
             summary="Distractor: routine CONFIG_CHANGE",
             diff_excerpt="unrelated",
             ref="event:6f9c0b3e-3c1a-4f5e-9a4b-8e2d1c0b7a12",
+        ),
+        "GroundingViolation": GroundingViolation(
+            field="causal_event_id",
+            raw="event:6f9c0b3e-3c1a-4f5e-9a4b-8e2d1c0b7a12",
+            normalized="event:6f9c0b3e-3c1a-4f5e-9a4b-8e2d1c0b7a12",
+            allowed_refs_sample=["event:6f9c0b3e-3c1a-4f5e-9a4b-8e2d1c0b7a12"],
         ),
         "EventPage": EventPage(
             ref="events:vehicle_telemetry",

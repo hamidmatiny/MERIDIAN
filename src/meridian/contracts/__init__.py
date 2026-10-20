@@ -3,6 +3,7 @@
 from meridian.contracts.approval import ApprovalDecision, ApprovalOutcome
 from meridian.contracts.change_event import ChangeEvent, EventKind
 from meridian.contracts.fault_type import FaultType
+from meridian.contracts.grounding import GroundingViolation
 from meridian.contracts.hypothesis import Evidence, Hypothesis
 from meridian.contracts.incident import Incident, RowValue
 from meridian.contracts.incident_case import MAX_CRITIC_ROUNDS, MAX_FIX_ATTEMPTS, IncidentCase
@@ -53,6 +54,7 @@ __all__ = [
     "Evidence",
     "FailureSample",
     "FaultType",
+    "GroundingViolation",
     "Hypothesis",
     "Incident",
     "IncidentCase",

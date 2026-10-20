@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import Field
 
 from meridian.contracts.base import MeridianModel
+from meridian.contracts.grounding import GroundingViolation
 from meridian.contracts.validation import FiniteFloat, NonBlank
 
 
@@ -52,4 +53,8 @@ class Hypothesis(MeridianModel):
         default=0,
         ge=0,
         description="Evidence items or a causal id dropped because no tool returned that ref.",
+    )
+    grounding_findings: list[GroundingViolation] = Field(
+        default_factory=list,
+        description="Each dropped citation, including the raw model value and a ref sample.",
     )

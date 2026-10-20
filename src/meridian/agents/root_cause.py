@@ -13,6 +13,13 @@ from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from meridian.agents.structured import bind_structured
+from meridian.contracts.grounding import (
+    GroundingViolation,
+    canonical_event_ref,
+    event_uuid,
+    ref_sample,
+)
 from meridian.contracts.hypothesis import Evidence, Hypothesis
 from meridian.contracts.llm_call import LLMCall
 from meridian.contracts.namespace import MERIDIAN_NAMESPACE
@@ -80,6 +87,7 @@ class LoopState(BaseModel):
     llm_calls: list[LLMCall] = Field(default_factory=list)
     tool_calls: list[ToolCall] = Field(default_factory=list)
     hypothesis: Hypothesis | None = None
+    causal_raw: str = ""
 
 
 def render_root_cause_prompt(state: MeridianState, *, max_tool_calls: int) -> str:
@@ -147,32 +155,44 @@ def run_root_cause(
     }
 
 
-def ground(hypothesis: Hypothesis, refs: set[str]) -> Hypothesis:
-    """Drop citations the tools did not return. Never add a reference."""
+def ground(hypothesis: Hypothesis, refs: set[str], *, causal_raw: str = "") -> Hypothesis:
+    """Drop citations the tools did not return. Never add a reference.
+
+    ``event:<id>`` and ``<id>`` name the same event. An id that appears anywhere in
+    this case's tool output is grounded; a later ``get_event`` is not required.
+    """
+    findings: list[GroundingViolation] = []
     kept: list[Evidence] = []
-    violations = 0
     for item in hypothesis.evidence:
-        if item.reference in refs:
+        if _cited(item.reference, refs):
             kept.append(item)
         else:
-            violations += 1
-    causal = hypothesis.causal_event_id
-    if causal is not None and f"event:{causal}" not in refs:
+            findings.append(_finding("evidence", item.reference, refs))
+    raw = causal_raw.strip()
+    if raw == "" and hypothesis.causal_event_id is not None:
+        raw = str(hypothesis.causal_event_id)
+    causal = event_uuid(raw) if raw else hypothesis.causal_event_id
+    if raw and not _cited(raw, refs):
+        findings.append(_finding("causal_event_id", raw, refs))
         causal = None
-        violations += 1
-    confidence = max(0.0, hypothesis.confidence - CONFIDENCE_DROP * violations)
+    confidence = max(0.0, hypothesis.confidence - CONFIDENCE_DROP * len(findings))
     return hypothesis.model_copy(
         update={
             "evidence": kept,
             "causal_event_id": causal,
             "confidence": confidence,
-            "grounding_violations": violations,
+            "grounding_violations": len(findings),
+            "grounding_findings": findings,
         }
     )
 
 
 def collect_refs(payload: str) -> list[str]:
-    """Every string stored under a ``ref`` key in a tool payload."""
+    """Refs and event ids in a tool payload.
+
+    A string under ``ref`` is kept as written. Any ``event:<uuid>`` or bare UUID is
+    also stored in both forms, so an id from ``list_events`` grounds a later citation.
+    """
     try:
         data = json.loads(payload)
     except json.JSONDecodeError:
@@ -180,6 +200,27 @@ def collect_refs(payload: str) -> list[str]:
     found: list[str] = []
     _walk_refs(data, found)
     return found
+
+
+def _cited(value: str, refs: set[str]) -> bool:
+    if value in refs:
+        return True
+    canonical = canonical_event_ref(value)
+    if canonical is None:
+        return False
+    key = canonical.removeprefix("event:")
+    return canonical in refs or key in refs
+
+
+def _finding(field: str, raw: str, refs: set[str]) -> GroundingViolation:
+    text = raw.strip() or "(empty)"
+    normalized = canonical_event_ref(text) or text
+    return GroundingViolation(
+        field=field,
+        raw=text,
+        normalized=normalized,
+        allowed_refs_sample=ref_sample(refs),
+    )
 
 
 def _compile_loop(
@@ -222,7 +263,7 @@ def _compile_loop(
 
     def finish(state: LoopState) -> dict[str, object]:
         current = state.hypothesis or _fallback(state.incident_id, state.prompt_version)
-        return {"hypothesis": ground(current, set(state.refs))}
+        return {"hypothesis": ground(current, set(state.refs), causal_raw=state.causal_raw)}
 
     graph: StateGraph[LoopState, None, LoopState, LoopState] = StateGraph(LoopState)
     graph.add_node("plan", plan)
@@ -248,8 +289,8 @@ def _force_answer(
     prompt_version: str,
     prior: list[LLMCall] | None = None,
 ) -> dict[str, object]:
-    structured = chat.with_structured_output(RootCauseDraft, include_raw=True)
-    parsed, call = _invoke_structured(
+    structured = bind_structured(chat, RootCauseDraft)
+    parsed, causal_raw, call = _invoke_structured(
         structured,
         _messages(state.turns),
         state.incident_id,
@@ -259,7 +300,7 @@ def _force_answer(
     )
     calls = [*(prior if prior is not None else state.llm_calls), call]
     hypothesis = parsed if parsed is not None else _fallback(state.incident_id, prompt_version)
-    return {"hypothesis": hypothesis, "llm_calls": calls}
+    return {"hypothesis": hypothesis, "llm_calls": calls, "causal_raw": causal_raw}
 
 
 def _execute(state: LoopState, tools_by_name: dict[str, BaseTool]) -> dict[str, object]:
@@ -335,42 +376,54 @@ def _invoke_structured(
     model_name: str,
     prompt_version: str,
     attempt: int,
-) -> tuple[Hypothesis | None, LLMCall]:
+) -> tuple[Hypothesis | None, str, LLMCall]:
     started = time.perf_counter()
     try:
         result = bound.invoke(messages)
     except Exception:
         result = None
     draft = _draft_from(result)
-    hypothesis = None if draft is None else _from_draft(draft, incident_id, prompt_version)
+    built = None if draft is None else _from_draft(draft, incident_id, prompt_version)
+    hypothesis = None if built is None else built[0]
+    causal_raw = "" if built is None else built[1]
     raw = result.get("raw") if isinstance(result, dict) else result
-    return hypothesis, _call_record(
-        raw,
-        model_name,
-        prompt_version,
-        attempt,
-        started,
-        hypothesis is not None,
+    return (
+        hypothesis,
+        causal_raw,
+        _call_record(
+            raw,
+            model_name,
+            prompt_version,
+            attempt,
+            started,
+            hypothesis is not None,
+        ),
     )
 
 
-def _from_draft(draft: RootCauseDraft, incident_id: UUID, prompt_version: str) -> Hypothesis | None:
-    """Build a hypothesis. An unparseable causal id fails grounding instead of being kept."""
+def _from_draft(
+    draft: RootCauseDraft,
+    incident_id: UUID,
+    prompt_version: str,
+) -> tuple[Hypothesis, str] | None:
+    """Build a hypothesis. The raw causal string is grounded later, not rewritten here."""
     try:
         mechanism = draft.mechanism.strip() or "unspecified"
-        return Hypothesis(
+        causal_raw = (draft.causal_event_id or "").strip()
+        hypothesis = Hypothesis(
             id=uuid5(MERIDIAN_NAMESPACE, f"hypothesis|{incident_id}|{prompt_version}"),
             incident_id=incident_id,
             root_cause_summary=draft.root_cause_summary,
             evidence=list(draft.evidence),
             confidence=draft.confidence,
-            causal_event_id=_causal_for_grounding(draft.causal_event_id),
+            causal_event_id=event_uuid(causal_raw),
             suspect_columns=list(draft.suspect_columns),
             mechanism=mechanism,
             grounding_violations=0,
         )
     except (ValidationError, ValueError):
         return None
+    return hypothesis, causal_raw
 
 
 def _draft_from(result: object) -> RootCauseDraft | None:
@@ -483,16 +536,6 @@ def _token(value: object) -> int:
     return max(value, 0)
 
 
-def _causal_for_grounding(value: str | None) -> UUID | None:
-    """Parse a causal id. An unparseable id becomes one no tool could have returned."""
-    if value is None or value.strip() == "":
-        return None
-    try:
-        return UUID(value)
-    except ValueError:
-        return uuid5(MERIDIAN_NAMESPACE, f"unparseable-causal|{value}")
-
-
 def _args_hash(args: dict[str, object]) -> str:
     payload = json.dumps(args, sort_keys=True, default=str)
     return hashlib.sha256(payload.encode()).hexdigest()
@@ -509,10 +552,26 @@ def _union(left: list[str], right: list[str]) -> list[str]:
 def _walk_refs(node: object, found: list[str]) -> None:
     if isinstance(node, dict):
         for key, value in node.items():
-            if key == "ref" and isinstance(value, str):
-                found.append(value)
+            if isinstance(value, str) and (key == "ref" or canonical_event_ref(value) is not None):
+                _remember(found, value)
             else:
                 _walk_refs(value, found)
     elif isinstance(node, list):
         for item in node:
-            _walk_refs(item, found)
+            if isinstance(item, str) and canonical_event_ref(item) is not None:
+                _remember(found, item)
+            else:
+                _walk_refs(item, found)
+
+
+def _remember(found: list[str], value: str) -> None:
+    if value not in found:
+        found.append(value)
+    canonical = canonical_event_ref(value)
+    if canonical is None:
+        return
+    bare = canonical.removeprefix("event:")
+    if bare not in found:
+        found.append(bare)
+    if canonical not in found:
+        found.append(canonical)

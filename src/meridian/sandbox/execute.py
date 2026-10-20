@@ -140,16 +140,20 @@ def _ensure_ray(num_cpus: int) -> None:
     import logging
     import os
 
+    os.environ["RAY_ENABLE_UV_RUN_RUNTIME_ENV"] = "0"
     import ray
 
     global _WARMED
     if not ray.is_initialized():
+        from meridian.agents.ray_runtime import prepare_ray_runtime
+
         os.environ["RAY_USAGE_STATS_ENABLED"] = "0"
         ray.init(
             num_cpus=num_cpus,
             include_dashboard=False,
             logging_level=logging.ERROR,
             ignore_reinit_error=True,
+            runtime_env=prepare_ray_runtime(),
         )
         _WARMED = False
     if _WARMED:

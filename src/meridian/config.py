@@ -66,6 +66,10 @@ class Settings(BaseSettings):
         default=None,
         description="Slack bot token used by the approval gate.",
     )
+    slack_app_token: SecretStr | None = Field(
+        default=None,
+        description="Slack app-level token used by the approval gate.",
+    )
     slack_signing_secret: SecretStr | None = Field(
         default=None,
         description="Slack signing secret used to verify inbound requests.",
@@ -146,6 +150,7 @@ class Settings(BaseSettings):
         "anthropic_api_key",
         "xai_api_key",
         "slack_bot_token",
+        "slack_app_token",
         "slack_signing_secret",
         "slack_approval_channel",
         "database_url",
@@ -178,6 +183,7 @@ class Settings(BaseSettings):
             name
             for name, present in (
                 ("SLACK_BOT_TOKEN", _secret_present(self.slack_bot_token)),
+                ("SLACK_APP_TOKEN", _secret_present(self.slack_app_token)),
                 ("SLACK_SIGNING_SECRET", _secret_present(self.slack_signing_secret)),
                 ("SLACK_APPROVAL_CHANNEL", self.slack_approval_channel is not None),
             )

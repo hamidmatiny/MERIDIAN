@@ -7,6 +7,7 @@ from typing import Any, Protocol
 from langchain_core.messages import BaseMessage, HumanMessage
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from meridian.agents.structured import bind_structured
 from meridian.contracts.llm_call import LLMCall
 from meridian.contracts.remediation import Objection, ObjectionKind
 from meridian.contracts.state import MeridianState
@@ -67,7 +68,7 @@ def run_critic(
     if case.patch is None:
         raise ValueError("critic runs after a patch")
     prompt = render_critic_prompt(state)
-    structured = chat.with_structured_output(VerdictDraft, include_raw=True)
+    structured = bind_structured(chat, VerdictDraft)
     draft, call = _invoke(structured, [HumanMessage(content=prompt)], model_name, prompt_version)
     verdict = _verdict(draft, case.patch.id, model_name, case.critic_rounds + 1)
     updated = record_verdict(case, verdict)

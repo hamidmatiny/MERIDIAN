@@ -26,6 +26,7 @@ Memory and network are best-effort, and they are weaker on macOS.
 - A patch that fails the gate counts as a verifier failure and can be revised, up to the fix-attempt cap.
 - Pandera is available to the regression test and not to the repair module.
 - A timeout is a failed check named `timeout`. The code is not left running.
+- The sandbox calls `prepare_ray_runtime`, so a worker does not rebuild the project with `uv`. The warmup task only touches an already-imported interpreter.
 - A demo on a Mac does not have a hard memory cap or a network namespace. The ADR is the record of that limit. A later Linux deployment can turn the `setrlimit` path on without changing the gate.
 
 ## Alternatives considered

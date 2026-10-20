@@ -8,11 +8,14 @@ A root-cause model can name an event or a column profile that no tool returned. 
 
 ## Decision
 
-After the model returns a hypothesis, a deterministic pass walks the refs collected from this case's tool payloads. A ref is any string stored under a JSON key named `ref`.
+After the model returns a hypothesis, a deterministic pass walks this case's tool payloads.
 
-- An `Evidence.reference` that is not in that set is removed.
-- `causal_event_id` is kept only when `event:<id>` was retrieved. Otherwise the id is cleared.
-- Each removal counts as one grounding violation. Confidence drops by 0.25 per violation, and does not go below 0.
+- A string stored under a JSON key named `ref` is a ref.
+- `event:<uuid>` and `<uuid>` are the same event. Both forms are stored when either one appears.
+- An event id seen anywhere in a tool payload is grounded. `list_events` returns those ids, so a later `get_event` is not required.
+- An `Evidence.reference` that does not match that set is removed.
+- `causal_event_id` is kept when its normalized event id was seen. Otherwise the id is cleared.
+- Each removal counts as one grounding violation and is stored as a `GroundingViolation`: the field, the raw model value, the normalized value, and a short sample of the refs it was checked against. Confidence drops by 0.25 per violation, and does not go below 0.
 - The pass never inserts a reference and never substitutes a retrieved id for a missing one.
 - `hypothesis.grounding_violations` is that count. A clean citation leaves it at 0.
 
@@ -22,7 +25,8 @@ If structured output does not parse, or the tool budget ends before a valid draf
 
 ## Consequences
 
-- A hallucinated ref cannot survive into the case. The score then sees a missing cause instead of a fabricated one.
+- A hallucinated ref cannot survive into the case. The bench score reports both `raw_causal_correct` (the id the model named, recovered from the violation when the guardrail cleared it) and `causal_event_correct` (the id that survived). A guardrail false negative is the case where the first is true and the second is false.
+- Any UUID in a tool payload is treated as an event id. That matches `list_events`. It can also ground an id that happened to appear for another reason.
 - The CLI fake cites the newest event on the incident's dataset, using only `id`, `ts`, and `dataset` from tool JSON. It does not read the causal-event marker, an injected-fault label, or the log file. Scripted models under `tests/` may still key off that marker.
 - The guardrail can only check refs the tools actually stamped. A true statement with no ref is dropped.
 - Lowering confidence is fixed arithmetic, so two runs with the same tool output and the same draft get the same violations.

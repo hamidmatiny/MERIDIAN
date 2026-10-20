@@ -27,6 +27,42 @@
       ],
       "title": "Evidence",
       "type": "object"
+    },
+    "GroundingViolation": {
+      "additionalProperties": false,
+      "description": "One citation the guardrail rejected.",
+      "properties": {
+        "allowed_refs_sample": {
+          "description": "A short sample of the refs this case's tools returned.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Refs Sample",
+          "type": "array"
+        },
+        "field": {
+          "description": "Hypothesis field that was checked, such as evidence.",
+          "title": "Field",
+          "type": "string"
+        },
+        "normalized": {
+          "description": "Form the value was compared in.",
+          "title": "Normalized",
+          "type": "string"
+        },
+        "raw": {
+          "description": "Value the model returned, before normalization.",
+          "title": "Raw",
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "raw",
+        "normalized"
+      ],
+      "title": "GroundingViolation",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -59,6 +95,14 @@
         "$ref": "#/$defs/Evidence"
       },
       "title": "Evidence",
+      "type": "array"
+    },
+    "grounding_findings": {
+      "description": "Each dropped citation, including the raw model value and a ref sample.",
+      "items": {
+        "$ref": "#/$defs/GroundingViolation"
+      },
+      "title": "Grounding Findings",
       "type": "array"
     },
     "grounding_violations": {

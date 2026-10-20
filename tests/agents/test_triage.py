@@ -126,6 +126,9 @@ def test_live_triage_smoke(tmp_path: Path) -> None:
     assert case.triage is not None
     assert case.severity is case.triage.final_severity
     assert case.incident.severity is None
+    assert case.triage.llm_severity is not None
+    assert case.triage.triage_degraded is False
+    assert any(call.succeeded for call in updated["llm_calls"])
     print(
         json.dumps(
             {

@@ -5,9 +5,10 @@ from string import Template
 from typing import Any, Protocol
 
 from langchain_core.messages import BaseMessage, HumanMessage
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from meridian.agents.severity_rules import floor_for
+from meridian.agents.structured import bind_structured
 from meridian.contracts.incident import Incident
 from meridian.contracts.llm_call import LLMCall
 from meridian.contracts.severity import Severity, more_severe
@@ -74,7 +75,7 @@ def _triage_one(
     floor = floor_for(incident.fault_type, len(incident.blast_radius))
     prompt = render_triage_prompt(incident, floor)
     messages: list[BaseMessage] = [HumanMessage(content=prompt)]
-    bound = chat.with_structured_output(TriageAssessment, include_raw=True)
+    bound = bind_structured(chat, TriageAssessment)
     calls: list[LLMCall] = []
     for attempt in range(1, MAX_TRIAGE_ATTEMPTS + 1):
         parsed, call = _attempt(bound, messages, model_name, prompt_version, attempt)
@@ -132,6 +133,11 @@ def _attempt(
         raw = result.get("raw")
         candidate = result.get("parsed")
         error = result.get("parsing_error")
+        if error is None and isinstance(candidate, dict):
+            try:
+                candidate = TriageAssessment.model_validate(candidate)
+            except ValidationError:
+                candidate = None
         if error is None and isinstance(candidate, TriageAssessment):
             parsed = candidate
             succeeded = True

@@ -17,6 +17,7 @@ from meridian.agents.fake_fix import HeuristicFixModel
 from meridian.agents.fake_llm import FakeTriageModel
 from meridian.agents.fake_root_cause import HeuristicRootCauseModel
 from meridian.agents.live_llm import build_live_chat, build_live_critic
+from meridian.agents.ray_runtime import shared_ray
 from meridian.agents.root_cause import ToolChat
 from meridian.agents.triage import StructuredChat
 from meridian.config import MeridianConfigError, Settings, get_settings
@@ -218,6 +219,7 @@ def _invoke(
     checkpoint = Path(settings.checkpoint_path)
     checkpoint.parent.mkdir(parents=True, exist_ok=True)
     with (
+        shared_ray(settings.ray_num_cpus),
         StdioSession(evidence_root) as session,
         SqliteSaver.from_conn_string(str(checkpoint)) as saver,
     ):

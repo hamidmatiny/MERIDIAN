@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from meridian.agents.patch_text import unified_diff
 from meridian.agents.root_cause import ToolChat, collect_refs
+from meridian.agents.structured import bind_structured
 from meridian.contracts.incident_case import IncidentCase
 from meridian.contracts.llm_call import LLMCall
 from meridian.contracts.patch import Patch
@@ -149,7 +150,7 @@ def _loop(
         tool_calls.append(record)
         messages.append(ToolMessage(content=payload, tool_call_id=call_id, name=name))
         steps += 1
-    structured = chat.with_structured_output(PatchDraft, include_raw=True)
+    structured = bind_structured(chat, PatchDraft)
     draft, call = _invoke_structured(
         structured,
         messages,

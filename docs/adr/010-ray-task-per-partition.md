@@ -10,6 +10,8 @@ Sentinel has to run the same pandera and PSI checks over many partitions. Doing 
 
 Each `PartitionRef` is one Ray task. The task loads the parquet file and the reference-profile JSON, then calls `quality.evaluate`. The driver deduplicates by `Incident.id`. Ray is started in `ray_runtime`, which calls `ray.shutdown` on exit. `num_cpus` comes from settings (`RAY_NUM_CPUS`, default 2). A serial collector runs the same function in-process so a test can require the two result lists to be equal.
 
+`uv run` makes Ray's default runtime hook set the worker executable to `uv run` and upload the working directory. Each worker then ignores `VIRTUAL_ENV` and builds a new project environment. `prepare_ray_runtime` sets `RAY_ENABLE_UV_RUN_RUNTIME_ENV=0` before `ray.init`, including on the constant Ray already imported, and passes an explicit `runtime_env` that only carries that variable. Workers use the driver interpreter. The sandbox cluster uses the same helper. The CLI holds that cluster with `shared_ray` for the whole graph, so Sentinel's shutdown does not force the sandbox to start a second one.
+
 ## Consequences
 
 - Sentinel does not call a model. A clean partition list ends the graph before Triage.

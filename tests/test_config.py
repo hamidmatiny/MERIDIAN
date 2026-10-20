@@ -11,6 +11,7 @@ _KEYS = (
     "ANTHROPIC_API_KEY",
     "XAI_API_KEY",
     "SLACK_BOT_TOKEN",
+    "SLACK_APP_TOKEN",
     "SLACK_SIGNING_SECRET",
     "SLACK_APPROVAL_CHANNEL",
     "DATABASE_URL",
@@ -34,6 +35,7 @@ def test_import_and_construction_tolerate_missing_keys(
     assert settings.anthropic_api_key is None
     assert settings.xai_api_key is None
     assert settings.slack_bot_token is None
+    assert settings.slack_app_token is None
     assert settings.slack_signing_secret is None
     assert settings.slack_approval_channel is None
     assert settings.database_url is None
@@ -112,6 +114,7 @@ def test_require_slack_names_missing_keys(monkeypatch: pytest.MonkeyPatch) -> No
     assert caught.value.purpose == "Slack"
     assert caught.value.missing == (
         "SLACK_BOT_TOKEN",
+        "SLACK_APP_TOKEN",
         "SLACK_SIGNING_SECRET",
         "SLACK_APPROVAL_CHANNEL",
     )
@@ -120,6 +123,7 @@ def test_require_slack_names_missing_keys(monkeypatch: pytest.MonkeyPatch) -> No
 def test_require_slack_reports_a_partial_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear(monkeypatch)
     monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test")
+    monkeypatch.setenv("SLACK_APP_TOKEN", "xapp-test")
     monkeypatch.setenv("SLACK_APPROVAL_CHANNEL", "C0123456789")
     with pytest.raises(MeridianConfigError, match=r"SLACK_SIGNING_SECRET") as caught:
         Settings(_env_file=None).require_slack()
@@ -129,6 +133,7 @@ def test_require_slack_reports_a_partial_configuration(monkeypatch: pytest.Monke
 def test_require_slack_returns_settings_when_complete(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear(monkeypatch)
     monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test")
+    monkeypatch.setenv("SLACK_APP_TOKEN", "xapp-test")
     monkeypatch.setenv("SLACK_SIGNING_SECRET", "signing")
     monkeypatch.setenv("SLACK_APPROVAL_CHANNEL", "C0123456789")
     monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/meridian")
@@ -157,10 +162,12 @@ def test_get_settings_reads_dotenv_without_overriding_the_environment(
 ) -> None:
     _clear(monkeypatch)
     monkeypatch.chdir(tmp_path)
-    (tmp_path / ".env").write_text(
+    env_file = tmp_path / ".env"
+    env_file.write_text(
         "ANTHROPIC_API_KEY=from-file\nXAI_API_KEY=from-file\n",
         encoding="utf-8",
     )
+    monkeypatch.setattr("dotenv.main.find_dotenv", lambda *_args, **_kwargs: str(env_file))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "from-env")
     settings = get_settings()
     assert settings.anthropic_api_key is not None
