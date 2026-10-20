@@ -1,4 +1,4 @@
-"""The Phase 0 import surface stays inside contracts, config, and schema export."""
+"""The import surface stays off the agent runtimes. Pandera is part of Phase 1."""
 
 import ast
 from pathlib import Path
@@ -16,7 +16,6 @@ BANNED = {
     "langchain_core",
     "anthropic",
     "mcp",
-    "pandera",
 }
 
 
@@ -35,7 +34,7 @@ def _imported_modules(path: Path) -> set[str]:
     return found
 
 
-def test_phase0_sources_do_not_import_agent_runtimes() -> None:
+def test_sources_do_not_import_agent_runtimes() -> None:
     paths = sorted(ROOT.rglob("*.py"))
     assert paths, f"no Python sources found under {ROOT}"
     offenders: list[str] = []

@@ -1,0 +1,74 @@
+{
+  "$defs": {
+    "FaultType": {
+      "description": "The kind of contract failure detected on a partition.",
+      "enum": [
+        "SCHEMA_DRIFT",
+        "NULL_EXPLOSION",
+        "UNIT_MISMATCH",
+        "DUPLICATE_KEYS",
+        "LATE_PARTITION",
+        "DISTRIBUTION_SHIFT"
+      ],
+      "title": "FaultType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The label MERIDIAN-Bench will score detections against.\n\nThe id is a UUID5 of the injection inputs, so the same inputs rebuild the\nsame label.",
+  "properties": {
+    "columns_affected": {
+      "description": "Columns the injector changed. Empty when only metadata moved.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Columns Affected",
+      "type": "array"
+    },
+    "dataset": {
+      "description": "Dataset the fault was applied to.",
+      "title": "Dataset",
+      "type": "string"
+    },
+    "fault_type": {
+      "$ref": "#/$defs/FaultType",
+      "description": "Fault that was applied."
+    },
+    "id": {
+      "description": "Deterministic identifier for this injection.",
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "intensity": {
+      "description": "Strength of the injection, from just above 0 through 1.",
+      "exclusiveMinimum": 0,
+      "maximum": 1,
+      "title": "Intensity",
+      "type": "number"
+    },
+    "rows_affected": {
+      "description": "How many rows the injector changed.",
+      "minimum": 0,
+      "title": "Rows Affected",
+      "type": "integer"
+    },
+    "seed": {
+      "description": "Seed used to build the corrupted frame.",
+      "minimum": 0,
+      "title": "Seed",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "id",
+    "fault_type",
+    "dataset",
+    "columns_affected",
+    "rows_affected",
+    "intensity",
+    "seed"
+  ],
+  "title": "InjectedFault",
+  "type": "object"
+}

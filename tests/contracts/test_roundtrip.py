@@ -1,5 +1,8 @@
 """JSON round trips for every contract model."""
 
+from datetime import UTC, date, datetime
+from uuid import UUID
+
 from pydantic import BaseModel
 from tests.contracts.builders import (
     make_approval,
@@ -12,7 +15,14 @@ from tests.contracts.builders import (
     make_verification,
 )
 
-from meridian.contracts import MeridianState
+from meridian.contracts import (
+    ColumnProfile,
+    InjectedFault,
+    MeridianState,
+    PartitionMetadata,
+    ReferenceProfile,
+)
+from meridian.contracts.fault_type import FaultType
 from meridian.schema_export import CONTRACT_SCHEMAS
 
 
@@ -42,6 +52,36 @@ def test_each_model_round_trips_through_json() -> None:
             critic_rounds=2,
         ),
         MeridianState(),
+        InjectedFault(
+            id=UUID("6f9c0b3e-3c1a-4f5e-9a4b-8e2d1c0b7a11"),
+            fault_type=FaultType.NULL_EXPLOSION,
+            dataset="vehicle_telemetry",
+            columns_affected=["battery_pct"],
+            rows_affected=10,
+            intensity=0.1,
+            seed=42,
+        ),
+        PartitionMetadata(
+            dataset="vehicle_telemetry",
+            partition_date=date(2026, 10, 19),
+            arrived_at=datetime(2026, 10, 20, 0, 30, tzinfo=UTC),
+        ),
+        ColumnProfile(
+            column="speed_mps",
+            bin_edges=[0.0, 1.0],
+            expected_proportions=[1.0],
+        ),
+        ReferenceProfile(
+            dataset="vehicle_telemetry",
+            psi_threshold=0.2,
+            columns=[
+                ColumnProfile(
+                    column="speed_mps",
+                    bin_edges=[0.0, 1.0],
+                    expected_proportions=[1.0],
+                )
+            ],
+        ),
     ]
     for model in models:
         _round_trip(model)
@@ -62,6 +102,36 @@ def test_round_trip_covers_every_contract_model() -> None:
         "TimelineEvent": make_postmortem(incident_id=incident.id).timeline[0],
         "Postmortem": make_postmortem(incident_id=incident.id),
         "MeridianState": MeridianState(incident=incident, critic_rounds=1),
+        "InjectedFault": InjectedFault(
+            id=UUID("6f9c0b3e-3c1a-4f5e-9a4b-8e2d1c0b7a11"),
+            fault_type=FaultType.LATE_PARTITION,
+            dataset="trip_summary",
+            columns_affected=[],
+            rows_affected=0,
+            intensity=0.2,
+            seed=1,
+        ),
+        "PartitionMetadata": PartitionMetadata(
+            dataset="trip_summary",
+            partition_date=date(2026, 10, 19),
+            arrived_at=datetime(2026, 10, 20, 0, 30, tzinfo=UTC),
+        ),
+        "ColumnProfile": ColumnProfile(
+            column="speed_mps",
+            bin_edges=[20.0, 40.0],
+            expected_proportions=[1.0],
+        ),
+        "ReferenceProfile": ReferenceProfile(
+            dataset="vehicle_telemetry",
+            psi_threshold=0.2,
+            columns=[
+                ColumnProfile(
+                    column="speed_mps",
+                    bin_edges=[20.0, 30.0, 40.0],
+                    expected_proportions=[0.5, 0.5],
+                )
+            ],
+        ),
     }
     model_names = {
         source.__name__

@@ -10,13 +10,17 @@ from pydantic import BaseModel, TypeAdapter
 from meridian.contracts import (
     ApprovalDecision,
     ApprovalOutcome,
+    ColumnProfile,
     Evidence,
     FaultType,
     Hypothesis,
     Incident,
+    InjectedFault,
     MeridianState,
+    PartitionMetadata,
     Patch,
     Postmortem,
+    ReferenceProfile,
     Severity,
     TimelineEvent,
     Verdict,
@@ -40,6 +44,10 @@ CONTRACT_SCHEMAS: tuple[tuple[str, SchemaType], ...] = (
     ("timeline_event", TimelineEvent),
     ("postmortem", Postmortem),
     ("meridian_state", MeridianState),
+    ("injected_fault", InjectedFault),
+    ("partition_metadata", PartitionMetadata),
+    ("column_profile", ColumnProfile),
+    ("reference_profile", ReferenceProfile),
 )
 
 

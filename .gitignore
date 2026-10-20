@@ -23,3 +23,7 @@ coverage.xml
 .env
 .env.*
 !.env.example
+
+# Generated partitions. Never commit them.
+data/
+data2/

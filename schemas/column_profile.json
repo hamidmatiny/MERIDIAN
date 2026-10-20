@@ -1,0 +1,36 @@
+{
+  "additionalProperties": false,
+  "description": "Equal-probability bins for one numeric column.",
+  "properties": {
+    "bin_edges": {
+      "description": "Inclusive histogram edges.",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 2,
+      "title": "Bin Edges",
+      "type": "array"
+    },
+    "column": {
+      "description": "Column these bins describe.",
+      "title": "Column",
+      "type": "string"
+    },
+    "expected_proportions": {
+      "description": "Expected share of rows in each bin. One fewer entry than bin_edges.",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 1,
+      "title": "Expected Proportions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "column",
+    "bin_edges",
+    "expected_proportions"
+  ],
+  "title": "ColumnProfile",
+  "type": "object"
+}

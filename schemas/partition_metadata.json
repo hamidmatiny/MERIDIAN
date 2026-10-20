@@ -1,0 +1,30 @@
+{
+  "additionalProperties": false,
+  "description": "When a partition was produced and when it arrived.",
+  "properties": {
+    "arrived_at": {
+      "description": "UTC time the partition arrived.",
+      "format": "date-time",
+      "title": "Arrived At",
+      "type": "string"
+    },
+    "dataset": {
+      "description": "Dataset this partition belongs to.",
+      "title": "Dataset",
+      "type": "string"
+    },
+    "partition_date": {
+      "description": "Calendar date of the partition.",
+      "format": "date",
+      "title": "Partition Date",
+      "type": "string"
+    }
+  },
+  "required": [
+    "dataset",
+    "partition_date",
+    "arrived_at"
+  ],
+  "title": "PartitionMetadata",
+  "type": "object"
+}

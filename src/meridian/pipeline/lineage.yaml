@@ -1,0 +1,7 @@
+# Upstream to downstream edges for the fleet telemetry pipeline.
+# downstream_of walks these edges transitively, in breadth-first order.
+edges:
+  - upstream: vehicle_telemetry
+    downstream: trip_summary
+  - upstream: trip_summary
+    downstream: fleet_daily_kpi

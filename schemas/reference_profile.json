@@ -1,0 +1,71 @@
+{
+  "$defs": {
+    "ColumnProfile": {
+      "additionalProperties": false,
+      "description": "Equal-probability bins for one numeric column.",
+      "properties": {
+        "bin_edges": {
+          "description": "Inclusive histogram edges.",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 2,
+          "title": "Bin Edges",
+          "type": "array"
+        },
+        "column": {
+          "description": "Column these bins describe.",
+          "title": "Column",
+          "type": "string"
+        },
+        "expected_proportions": {
+          "description": "Expected share of rows in each bin. One fewer entry than bin_edges.",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 1,
+          "title": "Expected Proportions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "column",
+        "bin_edges",
+        "expected_proportions"
+      ],
+      "title": "ColumnProfile",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Stored quantile profile for one dataset.",
+  "properties": {
+    "columns": {
+      "description": "Numeric columns compared against the profile.",
+      "items": {
+        "$ref": "#/$defs/ColumnProfile"
+      },
+      "minItems": 1,
+      "title": "Columns",
+      "type": "array"
+    },
+    "dataset": {
+      "description": "Dataset this profile describes.",
+      "title": "Dataset",
+      "type": "string"
+    },
+    "psi_threshold": {
+      "description": "Population Stability Index at or above this value is a shift.",
+      "exclusiveMinimum": 0,
+      "title": "Psi Threshold",
+      "type": "number"
+    }
+  },
+  "required": [
+    "dataset",
+    "psi_threshold",
+    "columns"
+  ],
+  "title": "ReferenceProfile",
+  "type": "object"
+}
