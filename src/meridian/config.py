@@ -88,6 +88,42 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MERIDIAN_ROOTCAUSE_MODEL"),
         description="Model name for root cause. Required only for a live run.",
     )
+    fix_model: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MERIDIAN_FIX_MODEL"),
+        description="Model name for the fix agent. Required only for a live run.",
+    )
+    critic_model: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MERIDIAN_CRITIC_MODEL"),
+        description="Model name for the critic. Required only for a live run.",
+    )
+    sandbox_timeout_s: float = Field(
+        default=20,
+        gt=0,
+        validation_alias=AliasChoices("MERIDIAN_SANDBOX_TIMEOUT_S"),
+        description="Seconds a sandboxed remediation may run before it is cancelled.",
+    )
+    sandbox_memory_mb: int = Field(
+        default=512,
+        ge=1,
+        validation_alias=AliasChoices("MERIDIAN_SANDBOX_MEMORY_MB"),
+        description="Ray memory scheduling hint for one remediation task, in megabytes.",
+    )
+    max_row_loss: float = Field(
+        default=0.01,
+        ge=0,
+        le=1,
+        validation_alias=AliasChoices("MERIDIAN_MAX_ROW_LOSS"),
+        description="Largest share of rows a data repair may drop.",
+    )
+    max_quarantine: float = Field(
+        default=0.25,
+        ge=0,
+        le=1,
+        validation_alias=AliasChoices("MERIDIAN_MAX_QUARANTINE"),
+        description="Largest share of rows a quarantine may remove.",
+    )
     rootcause_max_tool_calls: int = Field(
         default=8,
         ge=1,
@@ -115,6 +151,8 @@ class Settings(BaseSettings):
         "database_url",
         "triage_model",
         "rootcause_model",
+        "fix_model",
+        "critic_model",
         mode="before",
     )
     @classmethod

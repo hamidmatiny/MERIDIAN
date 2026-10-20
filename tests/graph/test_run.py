@@ -112,9 +112,12 @@ def test_zero_intensity_skips_injection_and_triage(tmp_path: Path, monkeypatch, 
 
 def test_live_without_keys_exits(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("XAI_API_KEY", raising=False)
-    monkeypatch.delenv("MERIDIAN_TRIAGE_MODEL", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("XAI_API_KEY", "")
+    monkeypatch.setenv("MERIDIAN_TRIAGE_MODEL", "")
+    monkeypatch.setenv("MERIDIAN_ROOTCAUSE_MODEL", "")
+    monkeypatch.setenv("MERIDIAN_FIX_MODEL", "")
+    monkeypatch.setenv("MERIDIAN_CRITIC_MODEL", "")
     code = main(
         [
             "--dataset",
@@ -191,18 +194,56 @@ def test_cli_rejects_intensity_and_seed_outside_range() -> None:
 
 def test_live_chat_uses_the_configured_model(monkeypatch) -> None:
     monkeypatch.setattr(Settings, "require_anthropic", lambda self: None)
+    monkeypatch.setattr(Settings, "require_xai", lambda self: self)
     monkeypatch.setattr("meridian.run.build_live_chat", lambda settings, **kwargs: "live-client")
+    monkeypatch.setattr("meridian.run.build_live_critic", lambda settings: "critic-client")
     settings = Settings(
         _env_file=None,
         anthropic_api_key=SecretStr("test-key"),
+        xai_api_key=SecretStr("xai-test"),
         triage_model="configured-model",
         rootcause_model="configured-root",
+        fix_model="configured-fix",
+        critic_model="configured-critic",
     )
-    chat, name, root_chat, root_name = _chat(settings, live=True)
-    assert chat == "live-client"
-    assert root_chat == "live-client"
-    assert name == "configured-model"
-    assert root_name == "configured-root"
+    chats = _chat(settings, live=True)
+    assert chats.triage_chat == "live-client"
+    assert chats.root_chat == "live-client"
+    assert chats.fix_chat == "live-client"
+    assert chats.critic_chat == "critic-client"
+    assert chats.triage_model == "configured-model"
+    assert chats.root_model == "configured-root"
+    assert chats.fix_model == "configured-fix"
+    assert chats.critic_model == "configured-critic"
+
+
+def test_live_without_xai_exits(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("XAI_API_KEY", "")
+    monkeypatch.setenv("MERIDIAN_TRIAGE_MODEL", "triage")
+    monkeypatch.setenv("MERIDIAN_ROOTCAUSE_MODEL", "root")
+    monkeypatch.setenv("MERIDIAN_FIX_MODEL", "fix")
+    monkeypatch.setenv("MERIDIAN_CRITIC_MODEL", "critic")
+    code = main(
+        [
+            "--dataset",
+            "fleet_daily_kpi",
+            "--fault",
+            "NULL_EXPLOSION",
+            "--intensity",
+            "0.0",
+            "--seed",
+            "1",
+            "--rows",
+            "10",
+            "--live",
+        ]
+    )
+    assert code == 2
+    captured = capsys.readouterr().err
+    assert "XAI_API_KEY" in captured
+    assert "ANTHROPIC_API_KEY" not in captured
 
 
 def test_module_entrypoint_prints_help(monkeypatch) -> None:
@@ -215,13 +256,39 @@ def test_module_entrypoint_prints_help(monkeypatch) -> None:
     assert caught.value.code == 0
 
 
-def test_live_builder_requires_a_model_name() -> None:
+def test_live_builder_requires_a_model_name(monkeypatch) -> None:
     from meridian.agents.live_llm import build_live_chat
     from meridian.config import MeridianConfigError
 
+    monkeypatch.delenv("MERIDIAN_TRIAGE_MODEL", raising=False)
     settings = Settings(_env_file=None, anthropic_api_key=SecretStr("test-key"))
     with pytest.raises(MeridianConfigError, match="MERIDIAN_TRIAGE_MODEL"):
         build_live_chat(settings)
+
+
+def test_live_critic_uses_the_configured_model(monkeypatch) -> None:
+    import importlib
+
+    from meridian.agents.live_llm import build_live_critic
+
+    created: dict[str, object] = {}
+
+    class _Chat:
+        def __init__(self, **kwargs: object) -> None:
+            created.update(kwargs)
+
+    monkeypatch.setattr(
+        importlib,
+        "import_module",
+        lambda _name: type("Mod", (), {"ChatXAI": _Chat})(),
+    )
+    settings = Settings(
+        _env_file=None,
+        xai_api_key=SecretStr("xai-test"),
+        critic_model="configured-critic",
+    )
+    build_live_critic(settings)
+    assert created["model_name"] == "configured-critic"
 
 
 def test_live_builder_requires_an_api_key(monkeypatch) -> None:

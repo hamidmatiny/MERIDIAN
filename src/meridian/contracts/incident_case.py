@@ -81,6 +81,16 @@ class IncidentCase(MeridianModel):
         le=MAX_CRITIC_ROUNDS,
         description="Completed Fix/Critic rounds so far. Maximum is 3.",
     )
+    needs_human: bool = Field(
+        default=False,
+        description="True when the case escalates or the loop cap is hit.",
+    )
+    critic_rejection_rate: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Share of critic verdicts on this case that rejected the patch.",
+    )
 
     @property
     def severity(self) -> Severity | None:

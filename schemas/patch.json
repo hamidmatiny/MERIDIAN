@@ -1,6 +1,19 @@
 {
+  "$defs": {
+    "RemediationKind": {
+      "description": "How a patch tries to clear an incident.\n\nNot every fault has a transform. Nulls stay null, and a late partition needs\na rerun. The fix step is allowed to refuse a code repair.",
+      "enum": [
+        "DATA_REPAIR",
+        "QUARANTINE",
+        "RERUN_UPSTREAM",
+        "ESCALATE"
+      ],
+      "title": "RemediationKind",
+      "type": "string"
+    }
+  },
   "additionalProperties": false,
-  "description": "A code change proposed for one hypothesis.\n\n``id`` is the value later verdicts, verification, and approval must match.",
+  "description": "A code change proposed for one hypothesis.\n\n``id`` is the value later verdicts, verification, and approval must match.\n``diff`` adds ``remediations/<incident_id>.py``. The regression test is pandera-based.",
   "properties": {
     "author_model": {
       "description": "Model that authored the patch.",
@@ -8,7 +21,7 @@
       "type": "string"
     },
     "diff": {
-      "description": "Unified diff of the proposed change.",
+      "description": "Unified diff that adds remediations/<incident_id>.py.",
       "title": "Diff",
       "type": "string"
     },
@@ -40,9 +53,14 @@
       "type": "string"
     },
     "regression_test": {
-      "description": "Source of the generated regression test.",
+      "description": "Pandera-based test for the remediation.",
       "title": "Regression Test",
       "type": "string"
+    },
+    "remediation_kind": {
+      "$ref": "#/$defs/RemediationKind",
+      "default": "ESCALATE",
+      "description": "Whether this patch repairs rows, quarantines them, requests a rerun, or escalates."
     }
   },
   "required": [

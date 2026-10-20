@@ -22,6 +22,7 @@ from meridian.contracts import (
 )
 from meridian.contracts.approval import ApprovalDecision, ApprovalOutcome
 from meridian.contracts.incident_case import IncidentCase
+from meridian.contracts.remediation import Objection, ObjectionKind
 
 _WORDS = st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=1, max_size=12)
 _UTC = st.datetimes(
@@ -106,7 +107,10 @@ def consistent_states(draw: st.DrawFn) -> MeridianState:
                 patch_id=patch.id if patch is not None else draw(st.uuids()),
                 reviewer_model=draw(_WORDS),
                 approved=draw(st.booleans()),
-                objections=draw(st.lists(_WORDS, max_size=2)),
+                objections=[
+                    Objection(kind=ObjectionKind.OTHER, message=message)
+                    for message in draw(st.lists(_WORDS, max_size=2))
+                ],
                 round=draw(st.integers(min_value=1, max_value=3)),
             )
         )

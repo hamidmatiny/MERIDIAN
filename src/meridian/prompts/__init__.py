@@ -6,6 +6,10 @@ TRIAGE_PROMPT_NAME = "triage"
 TRIAGE_PROMPT_VERSION = "v1"
 ROOT_CAUSE_PROMPT_NAME = "root_cause"
 ROOT_CAUSE_PROMPT_VERSION = "v1"
+FIX_PROMPT_NAME = "fix"
+FIX_PROMPT_VERSION = "v1"
+CRITIC_PROMPT_NAME = "critic"
+CRITIC_PROMPT_VERSION = "v1"
 
 
 def load_prompt(name: str, version: str) -> str:

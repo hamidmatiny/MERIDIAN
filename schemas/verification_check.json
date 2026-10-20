@@ -1,0 +1,28 @@
+{
+  "additionalProperties": false,
+  "description": "One deterministic check inside a verification.",
+  "properties": {
+    "detail": {
+      "default": "",
+      "description": "Short explanation. Empty when there is nothing to add.",
+      "title": "Detail",
+      "type": "string"
+    },
+    "name": {
+      "description": "Check name, such as contracts or row_loss.",
+      "title": "Name",
+      "type": "string"
+    },
+    "passed": {
+      "description": "Whether this check passed.",
+      "title": "Passed",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "name",
+    "passed"
+  ],
+  "title": "VerificationCheck",
+  "type": "object"
+}

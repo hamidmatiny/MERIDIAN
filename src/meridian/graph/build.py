@@ -1,4 +1,4 @@
-"""Sentinel fans out to triage, then root cause, one branch per incident."""
+"""Sentinel fans out to triage, then root cause, fix, critic, and verifier."""
 
 import logging
 from collections.abc import Callable
@@ -11,12 +11,18 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Send
 
+from meridian.agents.critic import CriticChat, run_critic
+from meridian.agents.fake_critic import HeuristicCriticModel
+from meridian.agents.fake_fix import HeuristicFixModel
+from meridian.agents.fix import run_fix
 from meridian.agents.root_cause import ToolChat, run_root_cause
 from meridian.agents.sentinel import run_sentinel
 from meridian.agents.triage import StructuredChat, run_triage
-from meridian.contracts.incident_case import IncidentCase
+from meridian.agents.verifier import run_verifier
+from meridian.contracts.incident_case import MAX_CRITIC_ROUNDS, MAX_FIX_ATTEMPTS, IncidentCase
 from meridian.contracts.severity import SEVERITY_RANK
 from meridian.contracts.state import MeridianState
+from meridian.graph.limits import route_after_root
 from meridian.prompts import TRIAGE_PROMPT_VERSION
 
 logger = logging.getLogger("meridian.graph")
@@ -44,11 +50,25 @@ def build_graph(
     tools: list[BaseTool] | None = None,
     tool_loader: ToolLoader | None = None,
     max_tool_calls: int = 8,
+    fix_model_name: str | None = None,
+    fix_chat: ToolChat | None = None,
+    critic_model_name: str | None = None,
+    critic_chat: CriticChat | None = None,
+    sandbox_timeout_s: float = 20,
+    sandbox_memory_mb: int = 512,
+    max_row_loss: float = 0.01,
+    max_quarantine: float = 0.25,
     detected_at: datetime | None = None,
     interrupt_after: list[str] | None = None,
 ) -> CompiledStateGraph[MeridianState, None, MeridianState, MeridianState]:
-    """Compile Sentinel → Triage → RootCause. Thread id is the run id."""
+    """Compile Sentinel → Triage → RootCause → Fix → Critic → Verifier."""
     moment = datetime.now(UTC) if detected_at is None else detected_at
+    fix_model = HeuristicFixModel()
+    critic_model = HeuristicCriticModel()
+    chosen_fix = fix_model if fix_chat is None else fix_chat
+    chosen_fix_name = fix_model.model_name if fix_model_name is None else fix_model_name
+    chosen_critic = critic_model if critic_chat is None else critic_chat
+    chosen_critic_name = critic_model.model_name if critic_model_name is None else critic_model_name
 
     def sentinel(state: MeridianState) -> dict[str, object]:
         return run_sentinel(state, num_cpus=num_cpus, detected_at=moment)
@@ -78,16 +98,57 @@ def build_graph(
             evidence_root=evidence_root,
         )
 
+    def fix(state: MeridianState) -> dict[str, object]:
+        resolved = list(tools) if tools is not None else []
+        if tools is None and tool_loader is not None:
+            resolved = tool_loader()
+        return run_fix(
+            _as_state(state),
+            model_name=chosen_fix_name,
+            chat=chosen_fix,
+            tools=resolved,
+            max_tool_calls=max_tool_calls,
+            max_row_loss=max_row_loss,
+            max_quarantine=max_quarantine,
+        )
+
+    def critic(state: MeridianState) -> dict[str, object]:
+        return run_critic(_as_state(state), model_name=chosen_critic_name, chat=chosen_critic)
+
+    def verifier(state: MeridianState) -> dict[str, object]:
+        return run_verifier(
+            _as_state(state),
+            num_cpus=num_cpus,
+            timeout_s=sandbox_timeout_s,
+            memory_mb=sandbox_memory_mb,
+            max_row_loss=max_row_loss,
+            max_quarantine=max_quarantine,
+        )
+
     graph: StateGraph[MeridianState, None, MeridianState, MeridianState] = StateGraph(MeridianState)
     graph.add_node("sentinel", sentinel)
     graph.add_node("triage", triage)
     graph.add_node("dispatch", dispatch, defer=True)
     graph.add_node("root_cause", root_cause)
+    graph.add_node("fix", fix)
+    graph.add_node("critic", critic)
+    graph.add_node("verifier", verifier)
+    graph.add_node("route_root", _wait, defer=True)
+    graph.add_node("route_fix", _wait, defer=True)
+    graph.add_node("route_critic", _wait, defer=True)
+    graph.add_node("route_verifier", _wait, defer=True)
     graph.add_edge(START, "sentinel")
     graph.add_conditional_edges("sentinel", _fan_out, ["triage", END])
     graph.add_edge("triage", "dispatch")
     graph.add_conditional_edges("dispatch", _to_root, ["root_cause", END])
-    graph.add_edge("root_cause", END)
+    graph.add_edge("root_cause", "route_root")
+    graph.add_conditional_edges("route_root", _after_root, ["fix", END])
+    graph.add_edge("fix", "route_fix")
+    graph.add_conditional_edges("route_fix", _to_critic, ["critic", END])
+    graph.add_edge("critic", "route_critic")
+    graph.add_conditional_edges("route_critic", _after_critic, ["fix", "verifier", END])
+    graph.add_edge("verifier", "route_verifier")
+    graph.add_conditional_edges("route_verifier", _after_verifier, ["fix", END])
     return graph.compile(
         checkpointer=checkpointer,
         interrupt_after=interrupt_after,
@@ -129,3 +190,68 @@ def _severity_key(item: tuple[str, IncidentCase]) -> tuple[int, str]:
     severity = item[1].severity
     rank = SEVERITY_RANK[severity] if severity is not None else 0
     return (-rank, item[0])
+
+
+def _wait(state: MeridianState) -> dict[str, object]:
+    """Join parallel branches. The conditional edge after this node fans out again."""
+    del state
+    return {}
+
+
+def _after_root(state: MeridianState) -> list[Send] | str:
+    """Send each case that has a hypothesis and no patch yet to its own Fix branch."""
+    pending = [
+        (key, case)
+        for key, case in state.cases.items()
+        if route_after_root(case) == "fix" and case.fix_attempts == 0
+    ]
+    if not pending:
+        return END
+    return [Send("fix", _branch(state, key, case)) for key, case in pending]
+
+
+def _to_critic(state: MeridianState) -> list[Send] | str:
+    """Send a case to Critic only when its latest Fix execution has not been reviewed."""
+    pending = [
+        (key, case)
+        for key, case in state.cases.items()
+        if case.patch is not None
+        and not case.needs_human
+        and len(case.verdicts) < case.fix_attempts
+    ]
+    if not pending:
+        return END
+    return [Send("critic", _branch(state, key, case)) for key, case in pending]
+
+
+def _after_critic(state: MeridianState) -> list[Send] | str:
+    """Approve goes to Verifier. A rejection under the cap goes back to Fix."""
+    sends: list[Send] = []
+    for key, case in state.cases.items():
+        if case.needs_human or not case.verdicts or case.patch is None:
+            continue
+        latest = case.verdicts[-1]
+        if latest.approved and case.verification is None:
+            sends.append(Send("verifier", _branch(state, key, case)))
+        elif (
+            not latest.approved
+            and case.fix_attempts == case.critic_rounds
+            and case.critic_rounds < MAX_CRITIC_ROUNDS
+        ):
+            sends.append(Send("fix", _branch(state, key, case)))
+    return sends or END
+
+
+def _after_verifier(state: MeridianState) -> list[Send] | str:
+    """A failed replay under the cap goes back to Fix. Anything else ends."""
+    pending = [
+        (key, case)
+        for key, case in state.cases.items()
+        if case.verification is not None
+        and not case.verification.passed
+        and not case.needs_human
+        and case.fix_attempts < MAX_FIX_ATTEMPTS
+    ]
+    if not pending:
+        return END
+    return [Send("fix", _branch(state, key, case)) for key, case in pending]

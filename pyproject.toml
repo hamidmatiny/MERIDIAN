@@ -33,6 +33,8 @@ build-backend = "hatchling.build"
 "src/meridian/pipeline/lineage.yaml" = "meridian/pipeline/lineage.yaml"
 "src/meridian/prompts/triage.v1.md" = "meridian/prompts/triage.v1.md"
 "src/meridian/prompts/root_cause.v1.md" = "meridian/prompts/root_cause.v1.md"
+"src/meridian/prompts/fix.v1.md" = "meridian/prompts/fix.v1.md"
+"src/meridian/prompts/critic.v1.md" = "meridian/prompts/critic.v1.md"
 
 [dependency-groups]
 dev = [

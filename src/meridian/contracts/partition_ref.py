@@ -19,3 +19,13 @@ class PartitionRef(MeridianModel):
     reference_profile_path: NonBlank = Field(
         description="Path to a ReferenceProfile JSON fit on a different clean partition.",
     )
+    generation_seed: int | None = Field(
+        default=None,
+        ge=0,
+        description=("Pipeline seed. Absent when this partition was not generated here."),
+    )
+    row_count: int | None = Field(
+        default=None,
+        ge=1,
+        description="Row count the pipeline was asked to generate.",
+    )

@@ -1,7 +1,56 @@
 {
+  "$defs": {
+    "RemediationKind": {
+      "description": "How a patch tries to clear an incident.\n\nNot every fault has a transform. Nulls stay null, and a late partition needs\na rerun. The fix step is allowed to refuse a code repair.",
+      "enum": [
+        "DATA_REPAIR",
+        "QUARANTINE",
+        "RERUN_UPSTREAM",
+        "ESCALATE"
+      ],
+      "title": "RemediationKind",
+      "type": "string"
+    },
+    "VerificationCheck": {
+      "additionalProperties": false,
+      "description": "One deterministic check inside a verification.",
+      "properties": {
+        "detail": {
+          "default": "",
+          "description": "Short explanation. Empty when there is nothing to add.",
+          "title": "Detail",
+          "type": "string"
+        },
+        "name": {
+          "description": "Check name, such as contracts or row_loss.",
+          "title": "Name",
+          "type": "string"
+        },
+        "passed": {
+          "description": "Whether this check passed.",
+          "title": "Passed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "passed"
+      ],
+      "title": "VerificationCheck",
+      "type": "object"
+    }
+  },
   "additionalProperties": false,
   "description": "Pass/fail from a data replay. No model judgment belongs in this record.",
   "properties": {
+    "checks": {
+      "description": "Per-check pass/fail list. Empty on older records.",
+      "items": {
+        "$ref": "#/$defs/VerificationCheck"
+      },
+      "title": "Checks",
+      "type": "array"
+    },
     "duration_ms": {
       "description": "Wall-clock duration of the replay, in milliseconds.",
       "minimum": 0,
@@ -24,6 +73,11 @@
       "format": "uuid",
       "title": "Patch Id",
       "type": "string"
+    },
+    "remediation_kind": {
+      "$ref": "#/$defs/RemediationKind",
+      "default": "DATA_REPAIR",
+      "description": "Kind of remediation this replay checked."
     },
     "rows_checked": {
       "description": "Number of rows the verifier replayed.",

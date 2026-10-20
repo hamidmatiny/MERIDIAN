@@ -10,6 +10,8 @@ from meridian.contracts import (
     FaultType,
     Hypothesis,
     Incident,
+    Objection,
+    ObjectionKind,
     Patch,
     Postmortem,
     Severity,
@@ -95,7 +97,12 @@ def make_verdict(*, patch_id: UUID | None = None, round_number: int = 1) -> Verd
         patch_id=uuid4() if patch_id is None else patch_id,
         reviewer_model="grok",
         approved=False,
-        objections=["The regression test does not cover the late partition."],
+        objections=[
+            Objection(
+                kind=ObjectionKind.MISSING_TEST,
+                message="The regression test does not cover the late partition.",
+            )
+        ],
         round=round_number,
     )
 

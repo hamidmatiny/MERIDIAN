@@ -278,9 +278,43 @@
       "title": "Incident",
       "type": "object"
     },
+    "Objection": {
+      "additionalProperties": false,
+      "description": "One typed reason the critic refused the patch.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ObjectionKind",
+          "description": "Objection category."
+        },
+        "message": {
+          "description": "What the reviewer wants changed.",
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "message"
+      ],
+      "title": "Objection",
+      "type": "object"
+    },
+    "ObjectionKind": {
+      "description": "Why the critic rejected a patch.",
+      "enum": [
+        "WRONG_ROOT_CAUSE",
+        "UNSAFE_CODE",
+        "DATA_LOSS_RISK",
+        "WRONG_REMEDIATION_KIND",
+        "MISSING_TEST",
+        "OTHER"
+      ],
+      "title": "ObjectionKind",
+      "type": "string"
+    },
     "Patch": {
       "additionalProperties": false,
-      "description": "A code change proposed for one hypothesis.\n\n``id`` is the value later verdicts, verification, and approval must match.",
+      "description": "A code change proposed for one hypothesis.\n\n``id`` is the value later verdicts, verification, and approval must match.\n``diff`` adds ``remediations/<incident_id>.py``. The regression test is pandera-based.",
       "properties": {
         "author_model": {
           "description": "Model that authored the patch.",
@@ -288,7 +322,7 @@
           "type": "string"
         },
         "diff": {
-          "description": "Unified diff of the proposed change.",
+          "description": "Unified diff that adds remediations/<incident_id>.py.",
           "title": "Diff",
           "type": "string"
         },
@@ -320,9 +354,14 @@
           "type": "string"
         },
         "regression_test": {
-          "description": "Source of the generated regression test.",
+          "description": "Pandera-based test for the remediation.",
           "title": "Regression Test",
           "type": "string"
+        },
+        "remediation_kind": {
+          "$ref": "#/$defs/RemediationKind",
+          "default": "ESCALATE",
+          "description": "Whether this patch repairs rows, quarantines them, requests a rerun, or escalates."
         }
       },
       "required": [
@@ -387,6 +426,17 @@
       ],
       "title": "Postmortem",
       "type": "object"
+    },
+    "RemediationKind": {
+      "description": "How a patch tries to clear an incident.\n\nNot every fault has a transform. Nulls stay null, and a late partition needs\na rerun. The fix step is allowed to refuse a code repair.",
+      "enum": [
+        "DATA_REPAIR",
+        "QUARANTINE",
+        "RERUN_UPSTREAM",
+        "ESCALATE"
+      ],
+      "title": "RemediationKind",
+      "type": "string"
     },
     "Severity": {
       "description": "How urgently an incident must be handled. SEV1 is the most severe.",
@@ -517,9 +567,9 @@
           "type": "boolean"
         },
         "objections": {
-          "description": "Reasons the reviewer rejected the patch, if any.",
+          "description": "Typed reasons the reviewer rejected the patch, if any.",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/Objection"
           },
           "title": "Objections",
           "type": "array"
@@ -552,10 +602,46 @@
       "title": "Verdict",
       "type": "object"
     },
+    "VerificationCheck": {
+      "additionalProperties": false,
+      "description": "One deterministic check inside a verification.",
+      "properties": {
+        "detail": {
+          "default": "",
+          "description": "Short explanation. Empty when there is nothing to add.",
+          "title": "Detail",
+          "type": "string"
+        },
+        "name": {
+          "description": "Check name, such as contracts or row_loss.",
+          "title": "Name",
+          "type": "string"
+        },
+        "passed": {
+          "description": "Whether this check passed.",
+          "title": "Passed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "passed"
+      ],
+      "title": "VerificationCheck",
+      "type": "object"
+    },
     "VerificationResult": {
       "additionalProperties": false,
       "description": "Pass/fail from a data replay. No model judgment belongs in this record.",
       "properties": {
+        "checks": {
+          "description": "Per-check pass/fail list. Empty on older records.",
+          "items": {
+            "$ref": "#/$defs/VerificationCheck"
+          },
+          "title": "Checks",
+          "type": "array"
+        },
         "duration_ms": {
           "description": "Wall-clock duration of the replay, in milliseconds.",
           "minimum": 0,
@@ -578,6 +664,11 @@
           "format": "uuid",
           "title": "Patch Id",
           "type": "string"
+        },
+        "remediation_kind": {
+          "$ref": "#/$defs/RemediationKind",
+          "default": "DATA_REPAIR",
+          "description": "Kind of remediation this replay checked."
         },
         "rows_checked": {
           "description": "Number of rows the verifier replayed.",
@@ -612,6 +703,14 @@
       "default": null,
       "description": "Human approval decision, if the gate has completed."
     },
+    "critic_rejection_rate": {
+      "default": 0.0,
+      "description": "Share of critic verdicts on this case that rejected the patch.",
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Critic Rejection Rate",
+      "type": "number"
+    },
     "critic_rounds": {
       "default": 0,
       "description": "Completed Fix/Critic rounds so far. Maximum is 3.",
@@ -643,6 +742,12 @@
     "incident": {
       "$ref": "#/$defs/Incident",
       "description": "The detected incident. Severity on it stays unset."
+    },
+    "needs_human": {
+      "default": false,
+      "description": "True when the case escalates or the loop cap is hit.",
+      "title": "Needs Human",
+      "type": "boolean"
     },
     "patch": {
       "anyOf": [

@@ -1,8 +1,9 @@
-"""Run Sentinel → Triage → RootCause on one injected partition."""
+"""Run Sentinel → Triage → RootCause → Fix → Critic → Verifier on one partition."""
 
 import argparse
 import sys
 import tempfile
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from uuid import uuid4
@@ -10,9 +11,12 @@ from uuid import uuid4
 import numpy as np
 from langgraph.checkpoint.sqlite import SqliteSaver
 
+from meridian.agents.critic import CriticChat
+from meridian.agents.fake_critic import HeuristicCriticModel
+from meridian.agents.fake_fix import HeuristicFixModel
 from meridian.agents.fake_llm import FakeTriageModel
 from meridian.agents.fake_root_cause import HeuristicRootCauseModel
-from meridian.agents.live_llm import build_live_chat
+from meridian.agents.live_llm import build_live_chat, build_live_critic
 from meridian.agents.root_cause import ToolChat
 from meridian.agents.triage import StructuredChat
 from meridian.config import MeridianConfigError, Settings, get_settings
@@ -49,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("seed must be >= 0")
     settings = get_settings()
     try:
-        chat, model_name, root_chat, root_model = _chat(settings, live=args.live)
+        chats = _chat(settings, live=args.live)
     except MeridianConfigError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -66,32 +70,77 @@ def main(argv: list[str] | None = None) -> int:
             rows=args.rows,
             partition=partition,
         )
-        state = _invoke(settings, chat, model_name, root_chat, root_model, ref, root)
+        state = _invoke(settings, chats, ref, root)
     print(state.model_dump_json(indent=2))
     return 0
 
 
-def _chat(
-    settings: Settings,
-    *,
-    live: bool,
-) -> tuple[StructuredChat, str, ToolChat, str]:
+@dataclass(frozen=True)
+class PreparedChats:
+    """The four chat models for one run, plus the names recorded on each call."""
+
+    triage_chat: StructuredChat
+    triage_model: str
+    root_chat: ToolChat
+    root_model: str
+    fix_chat: ToolChat
+    fix_model: str
+    critic_chat: CriticChat
+    critic_model: str
+
+
+def _chat(settings: Settings, *, live: bool) -> PreparedChats:
     if not live:
         triage = FakeTriageModel()
         root = HeuristicRootCauseModel()
-        return triage, triage.model_name, root, root.model_name
+        fix = HeuristicFixModel()
+        critic = HeuristicCriticModel()
+        return PreparedChats(
+            triage,
+            triage.model_name,
+            root,
+            root.model_name,
+            fix,
+            fix.model_name,
+            critic,
+            critic.model_name,
+        )
     settings.require_anthropic()
-    if settings.triage_model is None or settings.triage_model.strip() == "":
-        raise MeridianConfigError("LLM", ["MERIDIAN_TRIAGE_MODEL"])
-    if settings.rootcause_model is None or settings.rootcause_model.strip() == "":
-        raise MeridianConfigError("LLM", ["MERIDIAN_ROOTCAUSE_MODEL"])
-    triage_chat = build_live_chat(settings)
-    root_chat = build_live_chat(
-        settings,
-        model=settings.rootcause_model,
-        model_env="MERIDIAN_ROOTCAUSE_MODEL",
+    missing = [
+        name
+        for name, value in (
+            ("MERIDIAN_TRIAGE_MODEL", settings.triage_model),
+            ("MERIDIAN_ROOTCAUSE_MODEL", settings.rootcause_model),
+            ("MERIDIAN_FIX_MODEL", settings.fix_model),
+            ("MERIDIAN_CRITIC_MODEL", settings.critic_model),
+        )
+        if value is None or value.strip() == ""
+    ]
+    if missing:
+        raise MeridianConfigError("LLM", missing)
+    settings.require_xai()
+    assert settings.triage_model is not None
+    assert settings.rootcause_model is not None
+    assert settings.fix_model is not None
+    assert settings.critic_model is not None
+    return PreparedChats(
+        build_live_chat(settings),
+        settings.triage_model,
+        build_live_chat(
+            settings,
+            model=settings.rootcause_model,
+            model_env="MERIDIAN_ROOTCAUSE_MODEL",
+        ),
+        settings.rootcause_model,
+        build_live_chat(
+            settings,
+            model=settings.fix_model,
+            model_env="MERIDIAN_FIX_MODEL",
+        ),
+        settings.fix_model,
+        build_live_critic(settings),
+        settings.critic_model,
     )
-    return triage_chat, settings.triage_model, root_chat, settings.rootcause_model
 
 
 def _prepare(
@@ -155,15 +204,14 @@ def _prepare(
             arrived_at=arrived,
         ),
         reference_profile_path=str(profile_path),
+        generation_seed=seed,
+        row_count=rows,
     )
 
 
 def _invoke(
     settings: Settings,
-    chat: StructuredChat,
-    model_name: str,
-    root_chat: ToolChat,
-    root_model_name: str,
+    chats: PreparedChats,
     ref: PartitionRef,
     evidence_root: Path,
 ) -> MeridianState:
@@ -175,14 +223,22 @@ def _invoke(
     ):
         graph = build_graph(
             num_cpus=settings.ray_num_cpus,
-            model_name=model_name,
-            chat=chat,
+            model_name=chats.triage_model,
+            chat=chats.triage_chat,
             checkpointer=saver,
-            root_model_name=root_model_name,
-            root_chat=root_chat,
+            root_model_name=chats.root_model,
+            root_chat=chats.root_chat,
             evidence_root=evidence_root,
             tools=session.tools,
             max_tool_calls=settings.rootcause_max_tool_calls,
+            fix_model_name=chats.fix_model,
+            fix_chat=chats.fix_chat,
+            critic_model_name=chats.critic_model,
+            critic_chat=chats.critic_chat,
+            sandbox_timeout_s=settings.sandbox_timeout_s,
+            sandbox_memory_mb=settings.sandbox_memory_mb,
+            max_row_loss=settings.max_row_loss,
+            max_quarantine=settings.max_quarantine,
         )
         run_id = uuid4()
         result = graph.invoke(

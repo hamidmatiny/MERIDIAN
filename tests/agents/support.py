@@ -64,6 +64,8 @@ def write_partition(
             arrived_at=arrived,
         ),
         reference_profile_path=str(profile_path),
+        generation_seed=seed,
+        row_count=rows,
     )
 
 

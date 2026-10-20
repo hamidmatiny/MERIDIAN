@@ -1,0 +1,11 @@
+{
+  "description": "How a patch tries to clear an incident.\n\nNot every fault has a transform. Nulls stay null, and a late partition needs\na rerun. The fix step is allowed to refuse a code repair.",
+  "enum": [
+    "DATA_REPAIR",
+    "QUARANTINE",
+    "RERUN_UPSTREAM",
+    "ESCALATE"
+  ],
+  "title": "RemediationKind",
+  "type": "string"
+}

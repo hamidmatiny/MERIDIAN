@@ -1,0 +1,13 @@
+{
+  "description": "Why the critic rejected a patch.",
+  "enum": [
+    "WRONG_ROOT_CAUSE",
+    "UNSAFE_CODE",
+    "DATA_LOSS_RISK",
+    "WRONG_REMEDIATION_KIND",
+    "MISSING_TEST",
+    "OTHER"
+  ],
+  "title": "ObjectionKind",
+  "type": "string"
+}

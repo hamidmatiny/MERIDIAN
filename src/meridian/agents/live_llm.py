@@ -1,4 +1,7 @@
-"""Live ChatAnthropic client. Constructed only after require_anthropic succeeds."""
+"""Live chat clients. Constructed only after the matching require_* call succeeds."""
+
+import importlib
+from typing import Any
 
 from langchain_anthropic import ChatAnthropic
 
@@ -24,3 +27,17 @@ def build_live_chat(
         model=chosen,
         anthropic_api_key=settings.anthropic_api_key,
     )
+
+
+def build_live_critic(settings: Settings) -> Any:
+    """Build a Grok chat model. The caller must already have called ``require_xai``.
+
+    The provider package is imported here so a missing install does not break import.
+    """
+    if settings.critic_model is None or settings.critic_model.strip() == "":
+        raise MeridianConfigError("LLM", ["MERIDIAN_CRITIC_MODEL"])
+    if settings.xai_api_key is None:
+        raise MeridianConfigError("xAI", ["XAI_API_KEY"])
+    module = importlib.import_module("langchain_xai")
+    chat = module.ChatXAI
+    return chat(model_name=settings.critic_model, xai_api_key=settings.xai_api_key)

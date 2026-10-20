@@ -13,6 +13,12 @@ from meridian.contracts.partition_ref import PartitionRef
 from meridian.contracts.patch import Patch
 from meridian.contracts.postmortem import Postmortem, TimelineEvent
 from meridian.contracts.reference_profile import ColumnProfile, ReferenceProfile
+from meridian.contracts.remediation import (
+    Objection,
+    ObjectionKind,
+    RemediationKind,
+    VerificationCheck,
+)
 from meridian.contracts.severity import Severity
 from meridian.contracts.state import MeridianState
 from meridian.contracts.tool_call import ToolCall
@@ -54,6 +60,8 @@ __all__ = [
     "LLMCall",
     "LineageResult",
     "MeridianState",
+    "Objection",
+    "ObjectionKind",
     "PartitionDescription",
     "PartitionMetadata",
     "PartitionRef",
@@ -61,6 +69,7 @@ __all__ = [
     "Postmortem",
     "ReferenceComparison",
     "ReferenceProfile",
+    "RemediationKind",
     "RowValue",
     "Severity",
     "TimelineEvent",
@@ -68,5 +77,6 @@ __all__ = [
     "TriageAssessment",
     "TriageResult",
     "Verdict",
+    "VerificationCheck",
     "VerificationResult",
 ]

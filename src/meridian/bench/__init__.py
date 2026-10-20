@@ -1,1 +1,1 @@
-"""Benchmark helpers. Phase 3 only scores a single root-cause hypothesis."""
+"""Benchmark helpers. Scores are unit-tested. No accuracy is published from them."""

@@ -39,6 +39,20 @@
       "title": "Dataset",
       "type": "string"
     },
+    "generation_seed": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Pipeline seed. Absent when this partition was not generated here.",
+      "title": "Generation Seed"
+    },
     "metadata": {
       "$ref": "#/$defs/PartitionMetadata",
       "description": "Arrival metadata for the freshness check."
@@ -58,6 +72,20 @@
       "description": "Path to a ReferenceProfile JSON fit on a different clean partition.",
       "title": "Reference Profile Path",
       "type": "string"
+    },
+    "row_count": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Row count the pipeline was asked to generate.",
+      "title": "Row Count"
     }
   },
   "required": [

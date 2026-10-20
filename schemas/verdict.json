@@ -1,4 +1,40 @@
 {
+  "$defs": {
+    "Objection": {
+      "additionalProperties": false,
+      "description": "One typed reason the critic refused the patch.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ObjectionKind",
+          "description": "Objection category."
+        },
+        "message": {
+          "description": "What the reviewer wants changed.",
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "message"
+      ],
+      "title": "Objection",
+      "type": "object"
+    },
+    "ObjectionKind": {
+      "description": "Why the critic rejected a patch.",
+      "enum": [
+        "WRONG_ROOT_CAUSE",
+        "UNSAFE_CODE",
+        "DATA_LOSS_RISK",
+        "WRONG_REMEDIATION_KIND",
+        "MISSING_TEST",
+        "OTHER"
+      ],
+      "title": "ObjectionKind",
+      "type": "string"
+    }
+  },
   "additionalProperties": false,
   "description": "An independent reviewer's decision on one patch.\n\n``round`` is the Fix/Critic round and must be from 1 through 3.",
   "properties": {
@@ -8,9 +44,9 @@
       "type": "boolean"
     },
     "objections": {
-      "description": "Reasons the reviewer rejected the patch, if any.",
+      "description": "Typed reasons the reviewer rejected the patch, if any.",
       "items": {
-        "type": "string"
+        "$ref": "#/$defs/Objection"
       },
       "title": "Objections",
       "type": "array"

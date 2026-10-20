@@ -28,11 +28,14 @@ from meridian.contracts import (
     InjectedFault,
     LineageResult,
     MeridianState,
+    Objection,
+    ObjectionKind,
     PartitionDescription,
     PartitionMetadata,
     ReferenceComparison,
     ReferenceProfile,
     ToolCall,
+    VerificationCheck,
 )
 from meridian.contracts.change_event import EventKind
 from meridian.contracts.fault_type import FaultType
@@ -159,6 +162,8 @@ def test_round_trip_covers_every_contract_model() -> None:
         "Hypothesis": hypothesis,
         "Patch": patch,
         "Verdict": make_verdict(patch_id=patch.id),
+        "Objection": Objection(kind=ObjectionKind.OTHER, message="revise the patch"),
+        "VerificationCheck": VerificationCheck(name="contracts", passed=True),
         "VerificationResult": make_verification(patch_id=patch.id),
         "ApprovalDecision": make_approval(patch_id=patch.id),
         "TimelineEvent": make_postmortem(incident_id=incident.id).timeline[0],

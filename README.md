@@ -2,11 +2,11 @@
 
 MERIDIAN is being built to detect data-quality failures, explain them, propose a fix, verify that fix against the failing data, and ask a human in Slack before anything merges. The path is a fixed LangGraph state machine. The goal is to shorten the time from incident to a verified, approved fix.
 
-This repository has the Phase 0 contracts, the Phase 1 data contracts and injector, and the Phase 2 Sentinel → Triage graph. Phase 3 adds a root-cause agent that cites MCP tools. The fix loop and the Slack gate are not built. Unit tests do not call a model, Ray's object store beyond the local Sentinel tasks, or Slack.
+This repository has the Phase 0 contracts, the Phase 1 data contracts and injector, the Phase 2 Sentinel → Triage graph, and the Phase 3 root-cause agent. Phase 4 is the Fix → Critic → Verifier loop. Slack and the postmortem are not built. Unit tests do not call a model or Slack.
 
 ## Target agent graph
 
-Sentinel, Triage, and RootCause are implemented. The other nodes are planned.
+Sentinel through the verifier are implemented. Slack approval and the postmortem are planned. A passing verifier ends the branch.
 
 ```mermaid
 flowchart TD
@@ -16,17 +16,23 @@ flowchart TD
   fix[Fix]
   critic[Critic]
   verifier[Verifier]
+  human[needs_human]
   slack[SlackApproval]
   postmortem[Postmortem]
 
-  sentinel --> triage --> rootCause --> fix --> critic --> verifier --> slack --> postmortem
-  critic -->|"objections, at most 3 rounds"| fix
-  verifier -->|"replay failed, at most 2 reroutes"| fix
+  sentinel --> triage --> rootCause --> fix --> critic
+  critic -->|"approved"| verifier
+  critic -->|"rejected, critic_rounds under 3"| fix
+  critic -->|"rejected on round 3"| human
+  verifier -->|"passed"| done[END]
+  verifier -->|"failed, fix_attempts under 3"| fix
+  verifier -->|"failed on attempt 3, or escalated"| human
+  done -.-> slack --> postmortem
 
   classDef built fill:#d9ead3,stroke:#38761d
   classDef planned fill:#f3f3f3,stroke:#999
-  class sentinel,triage,rootCause built
-  class fix,critic,verifier,slack,postmortem planned
+  class sentinel,triage,rootCause,fix,critic,verifier,human built
+  class slack,postmortem planned
 ```
 
 | Node | Planned role |
@@ -34,9 +40,9 @@ flowchart TD
 | Sentinel | Run pandera contracts over partitions on Ray and emit an `Incident`. |
 | Triage | Claude assigns severity and blast radius. |
 | RootCause | Claude, with MCP tools, writes a `Hypothesis` and evidence. |
-| Fix | Claude writes a `Patch` and a regression test. |
-| Critic | Grok reviews the patch and returns a `Verdict`. |
-| Verifier | Ray replays the failing data. Pass/fail is deterministic. |
+| Fix | Claude writes a `Patch`: `DATA_REPAIR`, `QUARANTINE`, `RERUN_UPSTREAM`, or `ESCALATE`. |
+| Critic | Grok reviews the patch. Objections are typed. Three rejections escalate. |
+| Verifier | Ray replays the partition in a sandbox. Pass/fail does not use a label. |
 | SlackApproval | LangGraph interrupt. A human approves, rejects, or the request times out. |
 | Postmortem | Write the incident report. |
 
@@ -57,7 +63,7 @@ Root cause may call these. Each response is a Pydantic model with a stable `ref`
 
 A citation survives only when that ref came back from a tool in the same case. `MERIDIAN_ROOTCAUSE_MAX_TOOL_CALLS` defaults to 8.
 
-Loop limits, already enforced on each `IncidentCase`: Fix and Critic stop after 3 rounds. A failed verification may send the work back to Fix at most twice (3 Fix executions total), then the run escalates to a human.
+Loop limits, enforced on each `IncidentCase`: a critic rejection under round 3 returns to Fix. Round 3 escalates. A failed verification under 3 Fix executions returns to Fix. The third failure escalates. `fix_attempts` counts Fix executions, so the cap is 3.
 
 ## Phases
 
@@ -66,8 +72,8 @@ Loop limits, already enforced on each `IncidentCase`: Fix and Critic stop after 
 | 0 | Repository, ADRs, Pydantic contracts, CI | done |
 | 1 | Pandera contracts and an incident injector | done |
 | 2 | Graph skeleton: Sentinel to Triage | done |
-| 3 | RootCause agent with MCP tools | in progress |
-| 4 | Fix, Critic, and Verifier loop on Ray | planned |
+| 3 | RootCause agent with MCP tools | done |
+| 4 | Fix, Critic, and Verifier loop on Ray | in progress |
 | 5 | Slack approval gate and Postmortem | planned |
 | 6 | MERIDIAN-Bench harness and published results | planned |
 | 7 | OpenTelemetry, cost tracking, Docker Compose demo | planned |
@@ -77,16 +83,17 @@ Loop limits, already enforced on each `IncidentCase`: Fix and Critic stop after 
 - `src/meridian/contracts/` — frozen Pydantic models. A run is `MeridianState`: partitions, `llm_calls`, `tool_calls`, and one `IncidentCase` per incident.
 - `src/meridian/pipeline/` — seeded generators for the three fleet datasets, plus `lineage.yaml`.
 - `src/meridian/quality/` — pandera models, PSI, the freshness SLA, and `evaluate`, which returns `Incident` records.
-- `src/meridian/agents/` — Sentinel on Ray, the severity floor, Triage, and the bounded root-cause tool loop.
+- `src/meridian/agents/` — Sentinel on Ray, Triage, the bounded root-cause tool loop, Fix, Critic, and the deterministic Verifier.
+- `src/meridian/sandbox/` — AST gate and the Ray task that runs a remediation.
 - `src/meridian/mcp_servers/` — read-only lineage, data, and history tools.
-- `src/meridian/graph/` — Sentinel, then one triage branch and one root-cause branch per incident. The checkpointer is still SQLite.
-- `src/meridian/prompts/` — `triage.v1.md` and `root_cause.v1.md`.
-- `src/meridian/bench/score_root_cause.py` — scores one hypothesis against the injected fault. No accuracy is published from it.
-- `src/meridian/run.py` — `python -m meridian.run`. `--fake-llm` is the default. `--live` calls Claude for triage and root cause.
+- `src/meridian/graph/` — one branch per incident: triage, root cause, then Fix, Critic, and Verifier inside the caps above. The checkpointer is still SQLite.
+- `src/meridian/prompts/` — `triage.v1.md`, `root_cause.v1.md`, `fix.v1.md`, and `critic.v1.md`.
+- `src/meridian/bench/` — `score_root_cause.py` and `score_fix.py`. Both are unit-tested. No accuracy is published from them.
+- `src/meridian/run.py` — `python -m meridian.run`. `--fake-llm` is the default. `--live` calls Claude for triage, root cause, and fix, and Grok for the critic.
 - `src/meridian/injector/` — one injector per fault type, the seeded `events.jsonl` log, and the `python -m meridian.injector` CLI.
-- `src/meridian/config.py` — settings loaded from the environment and `.env`. Missing keys do not crash import. `Settings.require_anthropic()`, `Settings.require_xai()`, and `Settings.require_slack()` raise when a caller actually needs those credentials. `--live` asks for Anthropic plus `MERIDIAN_TRIAGE_MODEL` and `MERIDIAN_ROOTCAUSE_MODEL`.
+- `src/meridian/config.py` — settings loaded from the environment and `.env`. Missing keys do not crash import. `Settings.require_anthropic()`, `Settings.require_xai()`, and `Settings.require_slack()` raise when a caller actually needs those credentials. `--live` asks for Anthropic, then the four model names, then xAI.
 - `schemas/` — JSON Schema generated from the contracts.
-- `docs/adr/` — ADR-001 through ADR-017.
+- `docs/adr/` — ADR-001 through ADR-021.
 - `.github/workflows/ci.yml` — the checks below.
 
 Generated Parquet under `data/` is gitignored.
