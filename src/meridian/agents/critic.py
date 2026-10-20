@@ -4,7 +4,7 @@ import time
 from string import Template
 from typing import Any, Protocol
 
-from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from meridian.agents.structured import bind_structured
@@ -13,6 +13,9 @@ from meridian.contracts.remediation import Objection, ObjectionKind
 from meridian.contracts.state import MeridianState
 from meridian.contracts.verdict import Verdict
 from meridian.graph.limits import objection, record_verdict
+from meridian.llm.errors import RunAborted, call_model
+from meridian.llm.prompt_size import estimate_tokens, incident_json, tagged_human
+from meridian.llm.usage import make_llm_call
 from meridian.prompts import CRITIC_PROMPT_NAME, CRITIC_PROMPT_VERSION, load_prompt
 
 NODE = "critic"
@@ -39,18 +42,24 @@ class VerdictDraft(BaseModel):
     objections: list[dict[str, str]] = Field(default_factory=list)
 
 
-def render_critic_prompt(state: MeridianState) -> str:
-    """Fill the critic prompt from the incident, the hypothesis, and the patch."""
+def render_critic_prompt(state: MeridianState) -> tuple[str, str]:
+    """Fill the critic prompt from the incident, the hypothesis, the patch, and the dry-run."""
     _key, case = next(iter(state.cases.items()))
     hypothesis = "{}" if case.hypothesis is None else case.hypothesis.model_dump_json()
     patch = case.patch
+    dry_run = "{}" if case.dry_run is None else case.dry_run.model_dump_json()
+    sent_json, full_json = incident_json(case.incident)
     template = Template(load_prompt(CRITIC_PROMPT_NAME, CRITIC_PROMPT_VERSION))
-    return template.substitute(
-        incident_json=case.incident.model_dump_json(),
-        hypothesis_json=hypothesis,
-        remediation_kind=patch.remediation_kind.value if patch is not None else "ESCALATE",
-        diff=patch.diff if patch is not None else "",
-        regression_test=patch.regression_test if patch is not None else "",
+    fields = {
+        "hypothesis_json": hypothesis,
+        "remediation_kind": patch.remediation_kind.value if patch is not None else "ESCALATE",
+        "diff": patch.diff if patch is not None else "",
+        "regression_test": patch.regression_test if patch is not None else "",
+        "dry_run_json": dry_run,
+    }
+    return (
+        template.substitute(incident_json=sent_json, **fields),
+        template.substitute(incident_json=full_json, **fields),
     )
 
 
@@ -62,15 +71,26 @@ def run_critic(
     prompt_version: str = CRITIC_PROMPT_VERSION,
 ) -> dict[str, object]:
     """Review the current patch. A rejection on round 3 escalates."""
+    if state.aborted:
+        return {"aborted": True, "abort_reason": state.abort_reason}
     if len(state.cases) != 1:
         raise ValueError("a critic branch handles one incident")
     key, case = next(iter(state.cases.items()))
     if case.patch is None:
         raise ValueError("critic runs after a patch")
-    prompt = render_critic_prompt(state)
+    sent, uncut = render_critic_prompt(state)
     structured = bind_structured(chat, VerdictDraft)
-    draft, call = _invoke(structured, [HumanMessage(content=prompt)], model_name, prompt_version)
-    verdict = _verdict(draft, case.patch.id, model_name, case.critic_rounds + 1)
+    try:
+        draft, call = _invoke(
+            structured,
+            [tagged_human(sent, before=estimate_tokens(uncut), after=estimate_tokens(sent))],
+            model_name,
+            prompt_version,
+        )
+    except RunAborted as exc:
+        return {"aborted": True, "abort_reason": str(exc)}
+    over_broad = case.dry_run is not None and case.dry_run.over_broad
+    verdict = _verdict(draft, case.patch.id, model_name, case.critic_rounds + 1, over_broad)
     updated = record_verdict(case, verdict)
     return {"cases": {key: updated}, "llm_calls": [call]}
 
@@ -80,13 +100,23 @@ def _verdict(
     patch_id: object,
     model_name: str,
     round_number: int,
+    over_broad: bool,
 ) -> Verdict:
     from uuid import UUID
 
     if not isinstance(patch_id, UUID):
         raise TypeError("patch id must be a UUID")
-    if draft is None or not draft.approved:
-        objections = _objections(None if draft is None else draft.objections)
+    if draft is None:
+        return Verdict(
+            patch_id=patch_id,
+            reviewer_model=model_name,
+            approved=False,
+            objections=[],
+            critic_degraded=True,
+            round=round_number,
+        )
+    if not draft.approved:
+        objections = _objections(draft.objections, over_broad=over_broad)
         if not objections:
             objections = [objection(ObjectionKind.OTHER, "The review did not approve the patch.")]
         return Verdict(
@@ -105,7 +135,7 @@ def _verdict(
     )
 
 
-def _objections(raw: list[dict[str, str]] | None) -> list[Objection]:
+def _objections(raw: list[dict[str, str]] | None, *, over_broad: bool) -> list[Objection]:
     if raw is None:
         return []
     found: list[Objection] = []
@@ -118,6 +148,8 @@ def _objections(raw: list[dict[str, str]] | None) -> list[Objection]:
             kind = ObjectionKind(kind_text)
         except ValueError:
             kind = ObjectionKind.OTHER
+        if kind is ObjectionKind.OVER_BROAD_CHANGE and not over_broad:
+            continue
         found.append(objection(kind, message))
     return found
 
@@ -129,22 +161,20 @@ def _invoke(
     prompt_version: str,
 ) -> tuple[VerdictDraft | None, LLMCall]:
     started = time.perf_counter()
-    try:
-        result = bound.invoke(messages)
-    except Exception:
-        result = None
+    result, tokens_before, tokens_after = call_model(bound, messages)
     draft = _draft_from(result)
     raw = result.get("raw") if isinstance(result, dict) else result
-    usage = getattr(raw, "usage_metadata", None)
-    call = LLMCall(
+    call = make_llm_call(
         node=NODE,
         model=model_name,
         prompt_version=prompt_version,
-        input_tokens=_token(usage, "input_tokens"),
-        output_tokens=_token(usage, "output_tokens"),
+        raw=raw,
         latency_ms=max(int((time.perf_counter() - started) * 1000), 0),
         attempt=1,
         succeeded=draft is not None,
+        bound=bound,
+        tokens_before=tokens_before,
+        tokens_after=tokens_after,
     )
     return draft, call
 
@@ -161,12 +191,3 @@ def _draft_from(result: object) -> VerdictDraft | None:
         except ValidationError:
             return None
     return None
-
-
-def _token(usage: object, key: str) -> int:
-    if not isinstance(usage, dict):
-        return 0
-    value = usage.get(key)
-    if isinstance(value, bool) or not isinstance(value, int):
-        return 0
-    return max(value, 0)

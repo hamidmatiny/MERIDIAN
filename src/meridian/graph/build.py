@@ -15,6 +15,7 @@ from meridian.agents.critic import CriticChat, run_critic
 from meridian.agents.fake_critic import HeuristicCriticModel
 from meridian.agents.fake_fix import HeuristicFixModel
 from meridian.agents.fix import run_fix
+from meridian.agents.pre_critic import run_pre_critic
 from meridian.agents.root_cause import ToolChat, run_root_cause
 from meridian.agents.sentinel import run_sentinel
 from meridian.agents.triage import StructuredChat, run_triage
@@ -23,10 +24,39 @@ from meridian.contracts.incident_case import MAX_CRITIC_ROUNDS, MAX_FIX_ATTEMPTS
 from meridian.contracts.severity import SEVERITY_RANK
 from meridian.contracts.state import MeridianState
 from meridian.graph.limits import route_after_root
+from meridian.llm.errors import AbortGate, RunAborted, unwrap_abort
 from meridian.prompts import TRIAGE_PROMPT_VERSION
 
 logger = logging.getLogger("meridian.graph")
 ToolLoader = Callable[[], list[BaseTool]]
+
+
+def _guard(
+    gate: AbortGate,
+    state: object,
+    node: Callable[[MeridianState], dict[str, object]],
+) -> dict[str, object]:
+    """Skip the model once the run has aborted, and record a fatal provider error."""
+    if gate.reason is not None:
+        return {"aborted": True, "abort_reason": gate.reason}
+    current = _as_state(state)
+    if current.aborted:
+        reason = current.abort_reason or "aborted"
+        gate.trip(reason)
+        return {"aborted": True, "abort_reason": reason}
+    try:
+        update = node(current)
+    except Exception as exc:
+        aborted = exc if isinstance(exc, RunAborted) else unwrap_abort(exc)
+        if aborted is None:
+            raise
+        gate.trip(str(aborted))
+        return {"aborted": True, "abort_reason": str(aborted)}
+    raw_reason = update.get("abort_reason")
+    if update.get("aborted"):
+        text = raw_reason if isinstance(raw_reason, str) and raw_reason else "aborted"
+        gate.trip(text)
+    return update
 
 
 def _as_state(state: object) -> MeridianState:
@@ -69,16 +99,21 @@ def build_graph(
     chosen_fix_name = fix_model.model_name if fix_model_name is None else fix_model_name
     chosen_critic = critic_model if critic_chat is None else critic_chat
     chosen_critic_name = critic_model.model_name if critic_model_name is None else critic_model_name
+    gate = AbortGate()
 
     def sentinel(state: MeridianState) -> dict[str, object]:
         return run_sentinel(state, num_cpus=num_cpus, detected_at=moment)
 
     def triage(state: MeridianState) -> dict[str, object]:
-        return run_triage(
-            _as_state(state),
-            model_name=model_name,
-            chat=chat,
-            prompt_version=TRIAGE_PROMPT_VERSION,
+        return _guard(
+            gate,
+            state,
+            lambda current: run_triage(
+                current,
+                model_name=model_name,
+                chat=chat,
+                prompt_version=TRIAGE_PROMPT_VERSION,
+            ),
         )
 
     def dispatch(state: MeridianState) -> dict[str, object]:
@@ -89,31 +124,60 @@ def build_graph(
         resolved = list(tools) if tools is not None else []
         if tools is None and tool_loader is not None:
             resolved = tool_loader()
-        return run_root_cause(
-            _as_state(state),
-            model_name=root_model_name,
-            chat=root_chat,
-            tools=resolved,
-            max_tool_calls=max_tool_calls,
-            evidence_root=evidence_root,
-        )
+
+        def _run(current: MeridianState) -> dict[str, object]:
+            return run_root_cause(
+                current,
+                model_name=root_model_name,
+                chat=root_chat,
+                tools=resolved,
+                max_tool_calls=max_tool_calls,
+                evidence_root=evidence_root,
+            )
+
+        return _guard(gate, state, _run)
 
     def fix(state: MeridianState) -> dict[str, object]:
         resolved = list(tools) if tools is not None else []
         if tools is None and tool_loader is not None:
             resolved = tool_loader()
-        return run_fix(
-            _as_state(state),
-            model_name=chosen_fix_name,
-            chat=chosen_fix,
-            tools=resolved,
-            max_tool_calls=max_tool_calls,
-            max_row_loss=max_row_loss,
-            max_quarantine=max_quarantine,
+
+        def _run(current: MeridianState) -> dict[str, object]:
+            return run_fix(
+                current,
+                model_name=chosen_fix_name,
+                chat=chosen_fix,
+                tools=resolved,
+                max_tool_calls=max_tool_calls,
+                max_row_loss=max_row_loss,
+                max_quarantine=max_quarantine,
+            )
+
+        return _guard(gate, state, _run)
+
+    def pre_critic(state: MeridianState) -> dict[str, object]:
+        current = _as_state(state)
+        if gate.reason is not None or current.aborted:
+            reason = gate.reason or current.abort_reason or "aborted"
+            gate.trip(reason)
+            return {"aborted": True, "abort_reason": reason}
+        return run_pre_critic(
+            current,
+            num_cpus=num_cpus,
+            timeout_s=sandbox_timeout_s,
+            memory_mb=sandbox_memory_mb,
         )
 
     def critic(state: MeridianState) -> dict[str, object]:
-        return run_critic(_as_state(state), model_name=chosen_critic_name, chat=chosen_critic)
+        return _guard(
+            gate,
+            state,
+            lambda current: run_critic(
+                current,
+                model_name=chosen_critic_name,
+                chat=chosen_critic,
+            ),
+        )
 
     def verifier(state: MeridianState) -> dict[str, object]:
         return run_verifier(
@@ -131,10 +195,12 @@ def build_graph(
     graph.add_node("dispatch", dispatch, defer=True)
     graph.add_node("root_cause", root_cause)
     graph.add_node("fix", fix)
+    graph.add_node("pre_critic", pre_critic)
     graph.add_node("critic", critic)
     graph.add_node("verifier", verifier)
     graph.add_node("route_root", _wait, defer=True)
     graph.add_node("route_fix", _wait, defer=True)
+    graph.add_node("route_pre", _wait, defer=True)
     graph.add_node("route_critic", _wait, defer=True)
     graph.add_node("route_verifier", _wait, defer=True)
     graph.add_edge(START, "sentinel")
@@ -144,9 +210,11 @@ def build_graph(
     graph.add_edge("root_cause", "route_root")
     graph.add_conditional_edges("route_root", _after_root, ["fix", END])
     graph.add_edge("fix", "route_fix")
-    graph.add_conditional_edges("route_fix", _to_critic, ["critic", END])
+    graph.add_conditional_edges("route_fix", _to_pre_critic, ["pre_critic", END])
+    graph.add_edge("pre_critic", "route_pre")
+    graph.add_conditional_edges("route_pre", _after_pre_critic, ["fix", "critic", END])
     graph.add_edge("critic", "route_critic")
-    graph.add_conditional_edges("route_critic", _after_critic, ["fix", "verifier", END])
+    graph.add_conditional_edges("route_critic", _after_critic, ["fix", "critic", "verifier", END])
     graph.add_edge("verifier", "route_verifier")
     graph.add_conditional_edges("route_verifier", _after_verifier, ["fix", END])
     return graph.compile(
@@ -157,6 +225,8 @@ def build_graph(
 
 def _fan_out(state: MeridianState) -> list[Send] | str:
     """Send one triage branch per open case. An empty case map ends the run."""
+    if state.aborted:
+        return END
     pending = [(key, case) for key, case in state.cases.items() if case.triage is None]
     if not pending:
         return END
@@ -165,6 +235,8 @@ def _fan_out(state: MeridianState) -> list[Send] | str:
 
 def _to_root(state: MeridianState) -> list[Send] | str:
     """Log severity order, then send one root-cause branch per case. Branches stay parallel."""
+    if state.aborted:
+        return END
     ranked = sorted(state.cases.items(), key=_severity_key)
     if not ranked:
         return END
@@ -183,6 +255,8 @@ def _branch(state: MeridianState, key: str, case: IncidentCase) -> dict[str, obj
         "cases": {key: case},
         "llm_calls": [],
         "tool_calls": [],
+        "aborted": state.aborted,
+        "abort_reason": state.abort_reason,
     }
 
 
@@ -200,6 +274,8 @@ def _wait(state: MeridianState) -> dict[str, object]:
 
 def _after_root(state: MeridianState) -> list[Send] | str:
     """Send each case that has a hypothesis and no patch yet to its own Fix branch."""
+    if state.aborted:
+        return END
     pending = [
         (key, case)
         for key, case in state.cases.items()
@@ -210,31 +286,58 @@ def _after_root(state: MeridianState) -> list[Send] | str:
     return [Send("fix", _branch(state, key, case)) for key, case in pending]
 
 
-def _to_critic(state: MeridianState) -> list[Send] | str:
-    """Send a case to Critic only when its latest Fix execution has not been reviewed."""
+def _to_pre_critic(state: MeridianState) -> list[Send] | str:
+    """Send a patch to the deterministic checks before any critic call."""
+    if state.aborted:
+        return END
     pending = [
         (key, case)
         for key, case in state.cases.items()
         if case.patch is not None
         and not case.needs_human
-        and len(case.verdicts) < case.fix_attempts
+        and case.pre_critic_attempt < case.fix_attempts
     ]
     if not pending:
         return END
-    return [Send("critic", _branch(state, key, case)) for key, case in pending]
+    return [Send("pre_critic", _branch(state, key, case)) for key, case in pending]
+
+
+def _after_pre_critic(state: MeridianState) -> list[Send] | str:
+    """A syntax or gate failure returns to Fix. A passing dry-run goes to the critic."""
+    if state.aborted:
+        return END
+    sends: list[Send] = []
+    for key, case in state.cases.items():
+        if case.needs_human or case.patch is None:
+            continue
+        if case.pre_critic_blocked and case.fix_attempts < MAX_FIX_ATTEMPTS:
+            sends.append(Send("fix", _branch(state, key, case)))
+        elif (
+            not case.pre_critic_blocked
+            and case.pre_critic_attempt == case.fix_attempts
+            and len(case.verdicts) < case.fix_attempts
+        ):
+            sends.append(Send("critic", _branch(state, key, case)))
+    return sends or END
 
 
 def _after_critic(state: MeridianState) -> list[Send] | str:
-    """Approve goes to Verifier. A rejection under the cap goes back to Fix."""
+    """Approve goes to Verifier. A degraded review retries the critic, not Fix."""
+    if state.aborted:
+        return END
     sends: list[Send] = []
     for key, case in state.cases.items():
         if case.needs_human or not case.verdicts or case.patch is None:
             continue
         latest = case.verdicts[-1]
-        if latest.approved and case.verification is None:
+        degraded = sum(1 for item in case.verdicts if item.critic_degraded)
+        if latest.critic_degraded and degraded < 2:
+            sends.append(Send("critic", _branch(state, key, case)))
+        elif latest.approved and case.verification is None:
             sends.append(Send("verifier", _branch(state, key, case)))
         elif (
             not latest.approved
+            and not latest.critic_degraded
             and case.fix_attempts == case.critic_rounds
             and case.critic_rounds < MAX_CRITIC_ROUNDS
         ):
@@ -244,6 +347,8 @@ def _after_critic(state: MeridianState) -> list[Send] | str:
 
 def _after_verifier(state: MeridianState) -> list[Send] | str:
     """A failed replay under the cap goes back to Fix. Anything else ends."""
+    if state.aborted:
+        return END
     pending = [
         (key, case)
         for key, case in state.cases.items()

@@ -120,17 +120,46 @@ def test_three_rejections_need_a_human(tmp_path: Path) -> None:
     assert case.critic_rejection_rate == 1.0
 
 
-def test_verifier_failure_then_refix_passes(tmp_path: Path, monkeypatch) -> None:
-    recorded: list[object] = []
+_NOOP = "def repair(df):\n    return df\n"
+
+
+def test_static_gate_failure_returns_to_fix_without_a_critic_round(tmp_path: Path) -> None:
     state = _run(
         tmp_path,
         [_draft(RemediationKind.DATA_REPAIR.value, _BAD, _CHECK), _repair()],
+        [True],
+    )
+    case = _case(state)
+    assert case.fix_attempts == 2
+    assert case.critic_rounds == 1
+    assert case.verification is not None and case.verification.passed
+    assert case.needs_human is False
+
+
+def test_static_gate_failure_at_the_fix_cap_needs_a_human(tmp_path: Path) -> None:
+    bad = _draft(RemediationKind.DATA_REPAIR.value, _BAD, _CHECK)
+    state = _run(tmp_path, [bad, bad, bad], [True])
+    case = _case(state)
+    assert case.fix_attempts == 3
+    assert case.critic_rounds == 0
+    assert case.pre_critic_blocked is True
+    assert "import os" in case.pre_critic_note
+    assert case.verification is None
+    assert case.needs_human is True
+
+
+def test_verifier_failure_then_refix_passes(tmp_path: Path, monkeypatch) -> None:
+    recorded: list[object] = []
+    noop = _draft(RemediationKind.DATA_REPAIR.value, _NOOP, _CHECK)
+    state = _run(
+        tmp_path,
+        [noop, _repair()],
         [True, True],
         monkeypatch=monkeypatch,
         recorded=recorded,
     )
     case = _case(state)
-    assert recorded[0].checks[0].name == "static_gate"  # type: ignore[attr-defined]
+    assert recorded[0].checks[0].name == "contracts"  # type: ignore[attr-defined]
     assert recorded[0].passed is False  # type: ignore[attr-defined]
     assert case.verification is not None and case.verification.passed
     assert case.fix_attempts == 2
@@ -138,14 +167,14 @@ def test_verifier_failure_then_refix_passes(tmp_path: Path, monkeypatch) -> None
 
 
 def test_verifier_failure_at_the_limit_needs_a_human(tmp_path: Path) -> None:
-    bad = _draft(RemediationKind.DATA_REPAIR.value, _BAD, _CHECK)
+    bad = _draft(RemediationKind.DATA_REPAIR.value, _NOOP, _CHECK)
     state = _run(tmp_path, [bad, bad, bad], [True, True, True])
     case = _case(state)
     assert case.fix_attempts == 3
     assert case.needs_human is True
     assert case.verification is not None
     assert case.verification.passed is False
-    assert case.verification.checks[0].name == "static_gate"
+    assert case.verification.checks[0].name == "contracts"
 
 
 def test_escalate_path(tmp_path: Path) -> None:
@@ -246,5 +275,6 @@ def test_critic_parse_failure_rejects() -> None:
     )
     updated = state["cases"][str(incident.id)]
     assert updated.verdicts[-1].approved is False
-    assert updated.verdicts[-1].objections[0].kind.value == "OTHER"
+    assert updated.verdicts[-1].critic_degraded is True
+    assert updated.verdicts[-1].objections == []
     assert state["llm_calls"][0].succeeded is False

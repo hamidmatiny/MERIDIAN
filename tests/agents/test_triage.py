@@ -110,17 +110,18 @@ def test_missing_prompt_is_rejected() -> None:
 @pytest.mark.live
 def test_live_triage_smoke(tmp_path: Path) -> None:
     if os.environ.get("MERIDIAN_LIVE") != "1":
-        pytest.skip("set MERIDIAN_LIVE=1 to call Anthropic")
-    from meridian.agents.live_llm import build_live_chat
+        pytest.skip("set MERIDIAN_LIVE=1 to call the configured model")
     from meridian.config import get_settings
+    from meridian.llm.router import build_node_chat
 
     settings = get_settings()
-    settings.require_anthropic()
-    assert settings.triage_model is not None
+    if settings.triage_provider in {"anthropic", "xai"} and not settings.allow_paid:
+        pytest.skip("paid provider requires MERIDIAN_ALLOW_PAID=1")
+    chat, model_name = build_node_chat(settings, "triage")
     updated = run_triage(
         _incident(tmp_path),
-        model_name=settings.triage_model,
-        chat=build_live_chat(settings),
+        model_name=model_name,
+        chat=chat,
     )
     case = _only_case(updated)
     assert case.triage is not None
@@ -129,6 +130,12 @@ def test_live_triage_smoke(tmp_path: Path) -> None:
     assert case.triage.llm_severity is not None
     assert case.triage.triage_degraded is False
     assert any(call.succeeded for call in updated["llm_calls"])
+    for call in updated["llm_calls"]:
+        usd = "0.00" if call.provider not in {"anthropic", "xai"} else "paid"
+        print(
+            f"provider={call.provider} model={call.model} "
+            f"input_tokens={call.input_tokens} output_tokens={call.output_tokens} usd={usd}"
+        )
     print(
         json.dumps(
             {

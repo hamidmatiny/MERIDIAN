@@ -2,6 +2,7 @@
 
 from meridian.contracts.approval import ApprovalDecision, ApprovalOutcome
 from meridian.contracts.change_event import ChangeEvent, EventKind
+from meridian.contracts.dry_run import DryRunReport
 from meridian.contracts.fault_type import FaultType
 from meridian.contracts.grounding import GroundingViolation
 from meridian.contracts.hypothesis import Evidence, Hypothesis
@@ -48,6 +49,7 @@ __all__ = [
     "ColumnDescription",
     "ColumnProfile",
     "ContractSummary",
+    "DryRunReport",
     "EventKind",
     "EventPage",
     "EventView",

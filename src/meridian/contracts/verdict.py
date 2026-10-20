@@ -18,6 +18,10 @@ class Verdict(MeridianModel):
     patch_id: UUID = Field(description="Patch under review.")
     reviewer_model: NonBlank = Field(description="Model that produced this verdict.")
     approved: bool = Field(description="Whether the reviewer accepts the patch.")
+    critic_degraded: bool = Field(
+        default=False,
+        description="True when structured output failed. That is not a rejection.",
+    )
     objections: list[Objection] = Field(
         default_factory=list,
         description="Typed reasons the reviewer rejected the patch, if any.",

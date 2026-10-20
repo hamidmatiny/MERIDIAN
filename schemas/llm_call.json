@@ -8,6 +8,12 @@
       "title": "Attempt",
       "type": "integer"
     },
+    "fallback_used": {
+      "default": false,
+      "description": "True when an earlier hop in the node's chain failed over.",
+      "title": "Fallback Used",
+      "type": "boolean"
+    },
     "input_tokens": {
       "description": "Input tokens reported by the response.",
       "minimum": 0,
@@ -21,7 +27,7 @@
       "type": "integer"
     },
     "model": {
-      "description": "Model name from configuration, or the fake model name.",
+      "description": "Model id that answered, or the fake model name.",
       "title": "Model",
       "type": "string"
     },
@@ -36,9 +42,29 @@
       "title": "Output Tokens",
       "type": "integer"
     },
+    "prompt_tokens_after": {
+      "default": 0,
+      "description": "Estimated input tokens of the prompt actually sent.",
+      "minimum": 0,
+      "title": "Prompt Tokens After",
+      "type": "integer"
+    },
+    "prompt_tokens_before": {
+      "default": 0,
+      "description": "Estimated input tokens before the sample cap and tool-summary shrink.",
+      "minimum": 0,
+      "title": "Prompt Tokens Before",
+      "type": "integer"
+    },
     "prompt_version": {
       "description": "Prompt file version sent with the call.",
       "title": "Prompt Version",
+      "type": "string"
+    },
+    "provider": {
+      "default": "fake",
+      "description": "Provider that answered: ollama, omniroute, anthropic, xai, or fake.",
+      "title": "Provider",
       "type": "string"
     },
     "succeeded": {

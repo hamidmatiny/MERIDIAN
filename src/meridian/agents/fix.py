@@ -7,7 +7,7 @@ from string import Template
 from typing import Any
 from uuid import UUID
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -27,6 +27,9 @@ from meridian.graph.limits import (
     kind_or_escalate,
     patch_id_for,
 )
+from meridian.llm.errors import RunAborted, call_model
+from meridian.llm.prompt_size import estimate_tokens, incident_json, tagged_human
+from meridian.llm.usage import make_llm_call
 from meridian.mcp_servers.client import invoke_tool
 from meridian.prompts import FIX_PROMPT_NAME, FIX_PROMPT_VERSION, load_prompt
 
@@ -49,19 +52,23 @@ def render_fix_prompt(
     feedback: str,
     max_row_loss: float,
     max_quarantine: float,
-) -> str:
+) -> tuple[str, str]:
     """Fill the versioned fix prompt for the single case in this branch."""
     _key, case = next(iter(state.cases.items()))
     hypothesis = "{}" if case.hypothesis is None else case.hypothesis.model_dump_json()
     triage = "{}" if case.triage is None else case.triage.model_dump_json()
+    sent_json, full_json = incident_json(case.incident)
     template = Template(load_prompt(FIX_PROMPT_NAME, FIX_PROMPT_VERSION))
-    return template.substitute(
-        incident_json=case.incident.model_dump_json(),
-        triage_json=triage,
-        hypothesis_json=hypothesis,
-        feedback=feedback or "none",
-        max_row_loss=f"{max_row_loss:.0%}",
-        max_quarantine=f"{max_quarantine:.0%}",
+    fields = {
+        "triage_json": triage,
+        "hypothesis_json": hypothesis,
+        "feedback": feedback or "none",
+        "max_row_loss": f"{max_row_loss:.0%}",
+        "max_quarantine": f"{max_quarantine:.0%}",
+    }
+    return (
+        template.substitute(incident_json=sent_json, **fields),
+        template.substitute(incident_json=full_json, **fields),
     )
 
 
@@ -77,6 +84,8 @@ def run_fix(
     prompt_version: str = FIX_PROMPT_VERSION,
 ) -> dict[str, object]:
     """Propose one remediation for the single case and count the Fix execution."""
+    if state.aborted:
+        return {"aborted": True, "abort_reason": state.abort_reason}
     if len(state.cases) != 1:
         raise ValueError("a fix branch handles one incident")
     key, case = next(iter(state.cases.items()))
@@ -85,20 +94,24 @@ def run_fix(
     feedback = _feedback(case)
     hypothesis_id = case.hypothesis.id
     started = begin_fix(case)
-    prompt = render_fix_prompt(
+    sent, uncut = render_fix_prompt(
         state.model_copy(update={"cases": {key: started}}),
         feedback=feedback,
         max_row_loss=max_row_loss,
         max_quarantine=max_quarantine,
     )
-    draft, llm_calls, tool_calls = _loop(
-        prompt,
-        chat=chat,
-        tools=tools,
-        model_name=model_name,
-        prompt_version=prompt_version,
-        max_tool_calls=max_tool_calls,
-    )
+    try:
+        draft, llm_calls, tool_calls = _loop(
+            sent,
+            uncut,
+            chat=chat,
+            tools=tools,
+            model_name=model_name,
+            prompt_version=prompt_version,
+            max_tool_calls=max_tool_calls,
+        )
+    except RunAborted as exc:
+        return {"aborted": True, "abort_reason": str(exc)}
     patch = _patch(draft, started.incident.id, hypothesis_id, model_name, prompt_version)
     updated = finish_fix(started, patch)
     return {"cases": {key: updated}, "llm_calls": llm_calls, "tool_calls": tool_calls}
@@ -108,9 +121,11 @@ def _feedback(case: IncidentCase) -> str:
     parts: list[str] = []
     if case.verdicts:
         latest = case.verdicts[-1]
-        if not latest.approved:
+        if not latest.approved and not latest.critic_degraded:
             for item in latest.objections:
                 parts.append(f"{item.kind.value}: {item.message}")
+    if case.pre_critic_note:
+        parts.append(f"pre-critic: {case.pre_critic_note}")
     if case.verification is not None and not case.verification.passed:
         for check in case.verification.checks:
             if not check.passed:
@@ -120,6 +135,7 @@ def _feedback(case: IncidentCase) -> str:
 
 def _loop(
     prompt: str,
+    uncut: str,
     *,
     chat: ToolChat,
     tools: list[BaseTool],
@@ -129,7 +145,9 @@ def _loop(
 ) -> tuple[PatchDraft | None, list[LLMCall], list[ToolCall]]:
     tools_by_name = {tool.name: tool for tool in tools}
     bound = chat.bind_tools(tools)
-    messages: list[BaseMessage] = [HumanMessage(content=prompt)]
+    messages: list[BaseMessage] = [
+        tagged_human(prompt, before=estimate_tokens(uncut), after=estimate_tokens(prompt)),
+    ]
     llm_calls: list[LLMCall] = []
     tool_calls: list[ToolCall] = []
     steps = 0
@@ -226,13 +244,19 @@ def _invoke(
     attempt: int,
 ) -> tuple[object, LLMCall]:
     started = time.perf_counter()
-    try:
-        response = bound.invoke(messages)
-        succeeded = True
-    except Exception:
-        response = None
-        succeeded = False
-    return response, _call(response, model_name, prompt_version, attempt, started, succeeded)
+    response, tokens_before, tokens_after = call_model(bound, messages)
+    succeeded = response is not None
+    return response, _call(
+        response,
+        model_name,
+        prompt_version,
+        attempt,
+        started,
+        succeeded,
+        bound,
+        tokens_before,
+        tokens_after,
+    )
 
 
 def _invoke_structured(
@@ -243,13 +267,20 @@ def _invoke_structured(
     attempt: int,
 ) -> tuple[PatchDraft | None, LLMCall]:
     started = time.perf_counter()
-    try:
-        result = bound.invoke(messages)
-    except Exception:
-        result = None
+    result, tokens_before, tokens_after = call_model(bound, messages)
     draft = _draft_from(result)
     raw = result.get("raw") if isinstance(result, dict) else result
-    return draft, _call(raw, model_name, prompt_version, attempt, started, draft is not None)
+    return draft, _call(
+        raw,
+        model_name,
+        prompt_version,
+        attempt,
+        started,
+        draft is not None,
+        bound,
+        tokens_before,
+        tokens_after,
+    )
 
 
 def _draft_from(result: object) -> PatchDraft | None:
@@ -288,28 +319,23 @@ def _call(
     attempt: int,
     started: float,
     succeeded: bool,
+    bound: object,
+    tokens_before: int,
+    tokens_after: int,
 ) -> LLMCall:
     message = raw.get("raw") if isinstance(raw, dict) else raw
-    usage = getattr(message, "usage_metadata", None)
-    return LLMCall(
+    return make_llm_call(
         node=NODE,
         model=model_name,
         prompt_version=prompt_version,
-        input_tokens=_token(usage, "input_tokens"),
-        output_tokens=_token(usage, "output_tokens"),
+        raw=message,
         latency_ms=max(int((time.perf_counter() - started) * 1000), 0),
         attempt=attempt,
         succeeded=succeeded,
+        bound=bound,
+        tokens_before=tokens_before,
+        tokens_after=tokens_after,
     )
-
-
-def _token(usage: object, key: str) -> int:
-    if not isinstance(usage, dict):
-        return 0
-    value = usage.get(key)
-    if isinstance(value, bool) or not isinstance(value, int):
-        return 0
-    return max(value, 0)
 
 
 def _args_hash(args: dict[str, object]) -> str:

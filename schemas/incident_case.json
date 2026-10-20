@@ -51,6 +51,62 @@
       "title": "ApprovalOutcome",
       "type": "string"
     },
+    "DryRunReport": {
+      "additionalProperties": false,
+      "description": "What a 200-row sandbox sample did, measured without a model.",
+      "properties": {
+        "contracts_after": {
+          "description": "Incidents remaining on the sample afterward.",
+          "minimum": 0,
+          "title": "Contracts After",
+          "type": "integer"
+        },
+        "detail": {
+          "default": "",
+          "description": "Extra context for the critic. Empty when unused.",
+          "title": "Detail",
+          "type": "string"
+        },
+        "over_broad": {
+          "description": "True when the remediation modified rows outside the failing set.",
+          "title": "Over Broad",
+          "type": "boolean"
+        },
+        "psi_after": {
+          "default": "",
+          "description": "PSI result on the sample after the remediation.",
+          "title": "Psi After",
+          "type": "string"
+        },
+        "rows_changed": {
+          "description": "Rows the remediation changed or dropped.",
+          "minimum": 0,
+          "title": "Rows Changed",
+          "type": "integer"
+        },
+        "rows_changed_outside": {
+          "description": "Changed rows that were not in the incident's failing set.",
+          "minimum": 0,
+          "title": "Rows Changed Outside",
+          "type": "integer"
+        },
+        "rows_sampled": {
+          "description": "Rows in the dry-run sample.",
+          "minimum": 0,
+          "title": "Rows Sampled",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "rows_sampled",
+        "rows_changed",
+        "rows_changed_outside",
+        "over_broad",
+        "contracts_after"
+      ],
+      "title": "DryRunReport",
+      "type": "object"
+    },
     "Evidence": {
       "additionalProperties": false,
       "description": "One citation supporting a root-cause hypothesis.",
@@ -351,6 +407,7 @@
         "DATA_LOSS_RISK",
         "WRONG_REMEDIATION_KIND",
         "MISSING_TEST",
+        "OVER_BROAD_CHANGE",
         "OTHER"
       ],
       "title": "ObjectionKind",
@@ -610,6 +667,12 @@
           "title": "Approved",
           "type": "boolean"
         },
+        "critic_degraded": {
+          "default": false,
+          "description": "True when structured output failed. That is not a rejection.",
+          "title": "Critic Degraded",
+          "type": "boolean"
+        },
         "objections": {
           "description": "Typed reasons the reviewer rejected the patch, if any.",
           "items": {
@@ -763,6 +826,18 @@
       "title": "Critic Rounds",
       "type": "integer"
     },
+    "dry_run": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DryRunReport"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Latest pre-critic dry-run. The critic is shown this report."
+    },
     "fix_attempts": {
       "default": 0,
       "description": "Fix executions so far. Maximum is 3 (initial attempt plus two retries).",
@@ -816,6 +891,25 @@
       ],
       "default": null,
       "description": "Incident report, if the loop has finished."
+    },
+    "pre_critic_attempt": {
+      "default": 0,
+      "description": "Fix attempt last checked. A blocked check is not a critic round.",
+      "minimum": 0,
+      "title": "Pre Critic Attempt",
+      "type": "integer"
+    },
+    "pre_critic_blocked": {
+      "default": false,
+      "description": "True when syntax or the sandbox gate sent the patch back to Fix.",
+      "title": "Pre Critic Blocked",
+      "type": "boolean"
+    },
+    "pre_critic_note": {
+      "default": "",
+      "description": "Why the pre-critic bounced the patch. Empty when it passed.",
+      "title": "Pre Critic Note",
+      "type": "string"
     },
     "triage": {
       "anyOf": [

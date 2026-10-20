@@ -1,4 +1,4 @@
-# ADR-003: Cross-provider critic (Claude generates, Grok reviews)
+# ADR-003: Cross-family critic (free: Qwen generates, Gemma reviews)
 
 - Status: Accepted
 
@@ -8,15 +8,15 @@ The Fix step will propose a code change and a regression test. A review by the s
 
 ## Decision
 
-Claude, through `langchain-anthropic`, authors the `Patch`. Grok, through `langchain-xai`, reviews that patch and returns a `Verdict`. The verdict records `reviewer_model`, `approved`, `objections`, and the round number (1 through 3). The critic does not share the author's provider.
+The critic must be a different model family from the fixer. `Settings` rejects a same-family pair at load. Qwen fix with Qwen critic is rejected. Qwen fix with Gemma critic is the free-tier pairing. Claude fix with Grok critic is the paid pairing, and it runs only when `MERIDIAN_ALLOW_PAID=1` and a USD budget cap is configured.
 
-Phase 0 defines the `Patch` and `Verdict` contracts and the round cap. It does not call either provider.
+The free default chain is Ollama, then OmniRoute. Paid providers are not in that chain. The verdict still records `reviewer_model`, `approved`, `objections`, and the round (1 through 3). A structured-output failure sets `critic_degraded` and is not a rejection.
 
 ## Consequences
 
-- Two credentials are required before the critic loop can run: `ANTHROPIC_API_KEY` and `XAI_API_KEY`. `Settings.require_anthropic()` and `Settings.require_xai()` are the explicit checks. Importing the package does not require them. A node calls only the provider it uses.
-- A provider outage on either side stops the loop. That is preferred to a silent same-model review.
-- Each round costs two model calls. The cap of three rounds bounds that cost.
+- A free run needs Ollama (and, on fallback, OmniRoute). It does not need `ANTHROPIC_API_KEY` or `XAI_API_KEY`. Those keys are required only for a paid hop, after `MERIDIAN_ALLOW_PAID=1` and a USD cap.
+- A same-family pair fails at configuration load, before any model is called.
+- A billing, auth, or quota error aborts the run. A transient error retries twice and then uses the next hop. See ADR-024.
 - The verdict is data. It does not merge code and it does not decide that a replay passed. Those are separate steps.
 
 ## Alternatives considered

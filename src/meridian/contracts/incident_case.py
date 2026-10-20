@@ -14,6 +14,7 @@ from pydantic import Field, model_validator
 
 from meridian.contracts.approval import ApprovalDecision
 from meridian.contracts.base import MeridianModel
+from meridian.contracts.dry_run import DryRunReport
 from meridian.contracts.hypothesis import Hypothesis
 from meridian.contracts.incident import Incident
 from meridian.contracts.patch import Patch
@@ -90,6 +91,23 @@ class IncidentCase(MeridianModel):
         ge=0.0,
         le=1.0,
         description="Share of critic verdicts on this case that rejected the patch.",
+    )
+    pre_critic_attempt: int = Field(
+        default=0,
+        ge=0,
+        description="Fix attempt last checked. A blocked check is not a critic round.",
+    )
+    pre_critic_blocked: bool = Field(
+        default=False,
+        description="True when syntax or the sandbox gate sent the patch back to Fix.",
+    )
+    pre_critic_note: str = Field(
+        default="",
+        description="Why the pre-critic bounced the patch. Empty when it passed.",
+    )
+    dry_run: DryRunReport | None = Field(
+        default=None,
+        description="Latest pre-critic dry-run. The critic is shown this report.",
     )
 
     @property

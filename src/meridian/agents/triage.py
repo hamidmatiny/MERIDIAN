@@ -4,7 +4,7 @@ import time
 from string import Template
 from typing import Any, Protocol
 
-from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, ValidationError
 
 from meridian.agents.severity_rules import floor_for
@@ -14,6 +14,9 @@ from meridian.contracts.llm_call import LLMCall
 from meridian.contracts.severity import Severity, more_severe
 from meridian.contracts.state import MeridianState
 from meridian.contracts.triage import TriageAssessment, TriageResult
+from meridian.llm.errors import RunAborted, call_model
+from meridian.llm.prompt_size import estimate_tokens, incident_json, tagged_human
+from meridian.llm.usage import make_llm_call
 from meridian.prompts import TRIAGE_PROMPT_NAME, TRIAGE_PROMPT_VERSION, load_prompt
 
 MAX_TRIAGE_ATTEMPTS = 2
@@ -32,16 +35,24 @@ class StructuredChat(Protocol):
     ) -> Any: ...
 
 
-def render_triage_prompt(incident: Incident, floor: Severity) -> str:
+def render_triage_prompt(incident: Incident, floor: Severity) -> tuple[str, str]:
     """Fill the versioned triage prompt for one incident."""
     downstream = ",".join(incident.blast_radius) if incident.blast_radius else "-"
     template = Template(load_prompt(TRIAGE_PROMPT_NAME, TRIAGE_PROMPT_VERSION))
-    return template.substitute(
+    sent_json, full_json = incident_json(incident)
+    sent = template.substitute(
         floor=floor.value,
         incident_id=str(incident.id),
         downstream=downstream,
-        incident_json=incident.model_dump_json(),
+        incident_json=sent_json,
     )
+    uncut = template.substitute(
+        floor=floor.value,
+        incident_id=str(incident.id),
+        downstream=downstream,
+        incident_json=full_json,
+    )
+    return sent, uncut
 
 
 def run_triage(
@@ -52,15 +63,20 @@ def run_triage(
     prompt_version: str = TRIAGE_PROMPT_VERSION,
 ) -> dict[str, object]:
     """Triage the single case in this branch. Return only the new model calls."""
+    if state.aborted:
+        return {"aborted": True, "abort_reason": state.abort_reason}
     if len(state.cases) != 1:
         raise ValueError("a triage branch handles one incident")
     key, case = next(iter(state.cases.items()))
-    result, attempts = _triage_one(
-        case.incident,
-        model_name=model_name,
-        chat=chat,
-        prompt_version=prompt_version,
-    )
+    try:
+        result, attempts = _triage_one(
+            case.incident,
+            model_name=model_name,
+            chat=chat,
+            prompt_version=prompt_version,
+        )
+    except RunAborted as exc:
+        return {"aborted": True, "abort_reason": str(exc)}
     updated = case.model_copy(update={"triage": result})
     return {"cases": {key: updated}, "llm_calls": attempts}
 
@@ -73,8 +89,10 @@ def _triage_one(
     prompt_version: str,
 ) -> tuple[TriageResult, list[LLMCall]]:
     floor = floor_for(incident.fault_type, len(incident.blast_radius))
-    prompt = render_triage_prompt(incident, floor)
-    messages: list[BaseMessage] = [HumanMessage(content=prompt)]
+    sent, uncut = render_triage_prompt(incident, floor)
+    messages: list[BaseMessage] = [
+        tagged_human(sent, before=estimate_tokens(uncut), after=estimate_tokens(sent)),
+    ]
     bound = bind_structured(chat, TriageAssessment)
     calls: list[LLMCall] = []
     for attempt in range(1, MAX_TRIAGE_ATTEMPTS + 1):
@@ -124,10 +142,7 @@ def _attempt(
     parsed: TriageAssessment | None = None
     raw: object = None
     succeeded = False
-    try:
-        result = bound.invoke(messages)
-    except Exception:
-        result = None
+    result, tokens_before, tokens_after = call_model(bound, messages)
     latency_ms = int((time.perf_counter() - started) * 1000)
     if isinstance(result, dict):
         raw = result.get("raw")
@@ -141,28 +156,16 @@ def _attempt(
         if error is None and isinstance(candidate, TriageAssessment):
             parsed = candidate
             succeeded = True
-    input_tokens, output_tokens = _usage(raw)
-    call = LLMCall(
+    call = make_llm_call(
         node="triage",
         model=model_name,
         prompt_version=prompt_version,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
+        raw=raw,
         latency_ms=latency_ms,
         attempt=attempt,
         succeeded=succeeded,
+        bound=bound,
+        tokens_before=tokens_before,
+        tokens_after=tokens_after,
     )
     return parsed, call
-
-
-def _usage(raw: object) -> tuple[int, int]:
-    usage = getattr(raw, "usage_metadata", None)
-    if not isinstance(usage, dict):
-        return 0, 0
-    return _token(usage.get("input_tokens")), _token(usage.get("output_tokens"))
-
-
-def _token(value: object) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
-        return 0
-    return max(value, 0)

@@ -117,9 +117,9 @@ def compare_to_reference(path: str, profile_path: str) -> ReferenceComparison:
 
 
 def sample_failures(root: Path, incident_id: str, n: int) -> FailureSample:
-    """Return up to ``n`` sample rows stored for the incident. ``n`` is at most 20."""
-    if n < 1 or n > 20:
-        raise ValueError("n must be from 1 through 20")
+    """Return up to ``n`` sample rows stored for the incident. ``n`` is at most 10."""
+    if n < 1 or n > 10:
+        raise ValueError("n must be from 1 through 10")
     path = root / "incidents" / f"{incident_id}.json"
     incident = Incident.model_validate_json(path.read_text(encoding="utf-8"))
     if str(incident.id) != incident_id:

@@ -42,6 +42,18 @@ def append_tool_calls(left: list[ToolCall], right: list[ToolCall]) -> list[ToolC
     return [*left, *right]
 
 
+def merge_aborted(left: bool, right: bool) -> bool:
+    """One aborted branch aborts the run."""
+    return left or right
+
+
+def merge_abort_reason(left: str, right: str) -> str:
+    """Keep the first reason a branch recorded."""
+    if left.strip():
+        return left
+    return right
+
+
 class MeridianState(MeridianModel):
     """Checkpointed run state. Loop limits live on each ``IncidentCase``."""
 
@@ -61,4 +73,12 @@ class MeridianState(MeridianModel):
     tool_calls: Annotated[list[ToolCall], append_tool_calls] = Field(
         default_factory=list,
         description="Every tool call made during the run.",
+    )
+    aborted: Annotated[bool, merge_aborted] = Field(
+        default=False,
+        description="True when billing, auth, or quota stopped the run.",
+    )
+    abort_reason: Annotated[str, merge_abort_reason] = Field(
+        default="",
+        description="Why the run stopped. Empty when the run was not aborted.",
     )

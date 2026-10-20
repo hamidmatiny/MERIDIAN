@@ -77,6 +77,29 @@ def evaluate(
     return incidents
 
 
+def failure_positions(
+    dataset_name: str,
+    df: pd.DataFrame,
+    metadata: PartitionMetadata,
+    reference_profile: ReferenceProfile,
+    fault: FaultType,
+) -> set[int]:
+    """Row positions that fail ``fault`` on this frame. The injector is not consulted."""
+    if metadata.dataset != dataset_name:
+        raise ValueError("metadata.dataset must match dataset_name")
+    if reference_profile.dataset != dataset_name:
+        raise ValueError("reference_profile.dataset must match dataset_name")
+    grouped: dict[FaultType, _Bucket] = {}
+    _collect_schema_errors(df, dataset_name, grouped)
+    _collect_psi(df, reference_profile, grouped)
+    if is_late(metadata, DEFAULT_FRESHNESS_SLA):
+        _add(grouped, FaultType.LATE_PARTITION, "partition_arrival_sla", [])
+    bucket = grouped.get(fault)
+    if bucket is None:
+        return set()
+    return set(bucket.indices)
+
+
 def _incident_id(dataset: str, partition: str, contract_name: str, fault: FaultType) -> UUID:
     """UUID5 of the partition and the fault. The same inputs rebuild the same id."""
     payload = "|".join((dataset, partition, contract_name, fault.value))

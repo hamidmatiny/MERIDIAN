@@ -17,12 +17,14 @@ def route_after_root(case: IncidentCase) -> str:
 
 
 def route_after_critic(case: IncidentCase) -> str:
-    """Approve goes to the verifier. A rejection under the cap goes back to Fix."""
+    """Approve goes to the verifier. A degraded review is not a rejection."""
     if case.needs_human or not case.verdicts:
         return "end"
     latest = case.verdicts[-1]
     if latest.approved:
         return "verifier"
+    if latest.critic_degraded:
+        return "critic"
     if case.critic_rounds >= MAX_CRITIC_ROUNDS or case.fix_attempts >= MAX_FIX_ATTEMPTS:
         return "end"
     return "fix"
@@ -62,7 +64,11 @@ def record_verdict(case: IncidentCase, verdict: Verdict) -> IncidentCase:
         raise ValueError("verdict.round must equal the next critic round")
     verdicts = [*case.verdicts, verdict]
     needs = case.needs_human
-    if not verdict.approved and (
+    degraded = sum(1 for item in verdicts if item.critic_degraded)
+    if verdict.critic_degraded:
+        if degraded >= 2:
+            needs = True
+    elif not verdict.approved and (
         rounds >= MAX_CRITIC_ROUNDS or case.fix_attempts >= MAX_FIX_ATTEMPTS
     ):
         needs = True
@@ -93,7 +99,7 @@ def rejection_rate(verdicts: list[Verdict]) -> float:
     """Share of verdicts that rejected. Zero when the critic has not run."""
     if not verdicts:
         return 0.0
-    rejected = sum(1 for item in verdicts if not item.approved)
+    rejected = sum(1 for item in verdicts if not item.approved and not item.critic_degraded)
     return rejected / len(verdicts)
 
 

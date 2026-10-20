@@ -178,9 +178,9 @@ def test_history_filters_and_sample_bounds(tmp_path: Path, monkeypatch: pytest.M
         list_change_events(tmp_path, since="2026-10-01T00:00:00")
     with pytest.raises(KeyError, match="unknown event"):
         get_change_event(tmp_path, "00000000-0000-4000-8000-000000000099")
-    with pytest.raises(ValueError, match="1 through 20"):
-        sample_failures(tmp_path, str(incident.id), 21)
-    with pytest.raises(ValueError, match="1 through 20"):
+    with pytest.raises(ValueError, match="1 through 10"):
+        sample_failures(tmp_path, str(incident.id), 11)
+    with pytest.raises(ValueError, match="1 through 10"):
         sample_failures(tmp_path, str(incident.id), 0)
 
 

@@ -11,32 +11,39 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from tests.agents.support import write_partition
 
 from meridian.agents.fake_llm import FakeTriageModel
-from meridian.agents.live_llm import build_live_chat, build_live_critic
 from meridian.bench.score_fix import score
 from meridian.contracts.fault_type import FaultType
 from meridian.contracts.remediation import RemediationKind
 from meridian.contracts.state import MeridianState
 from meridian.graph.build import build_graph
 from meridian.injector.faults import INJECTORS
+from meridian.llm.router import build_node_chat
 from meridian.mcp_servers.client import inprocess_tools
 from meridian.pipeline.generate import generate_dataset
 
 
 def _live(tmp_path: Path, dataset: str, fault: FaultType) -> None:
     if os.environ.get("MERIDIAN_LIVE") != "1":
-        pytest.skip("set MERIDIAN_LIVE=1 to call Claude and Grok")
+        pytest.skip("set MERIDIAN_LIVE=1 to call the configured free-tier models")
     from meridian.config import get_settings
+    from meridian.llm.budget import open_budget
+    from meridian.llm.errors import AbortGate
 
     settings = get_settings()
-    settings.require_anthropic()
-    settings.require_xai()
-    missing = (
-        settings.fix_model is None
-        or settings.critic_model is None
-        or settings.rootcause_model is None
+    for node in ("rootcause", "fix", "critic"):
+        provider = getattr(settings, f"{node}_provider")
+        if provider in {"anthropic", "xai"} and not settings.allow_paid:
+            pytest.skip("paid provider requires MERIDIAN_ALLOW_PAID=1")
+    gate = AbortGate()
+    budget = open_budget(
+        spend_path=settings.spend_path,
+        allow_paid=settings.allow_paid,
+        max_run=settings.max_usd_per_run,
+        max_day=settings.max_usd_per_day,
     )
-    if missing:
-        pytest.fail("fix, critic, and root-cause model names are required")
+    root_chat, root_model = build_node_chat(settings, "rootcause", gate=gate, budget=budget)
+    fix_chat, fix_model = build_node_chat(settings, "fix", gate=gate, budget=budget)
+    critic_chat, critic_model = build_node_chat(settings, "critic", gate=gate, budget=budget)
     ref = write_partition(
         tmp_path,
         dataset=dataset,
@@ -71,23 +78,15 @@ def _live(tmp_path: Path, dataset: str, fault: FaultType) -> None:
             model_name="fake-triage",
             chat=FakeTriageModel(),
             checkpointer=saver,
-            root_model_name=settings.rootcause_model,
-            root_chat=build_live_chat(
-                settings,
-                model=settings.rootcause_model,
-                model_env="MERIDIAN_ROOTCAUSE_MODEL",
-            ),
+            root_model_name=root_model,
+            root_chat=root_chat,
             evidence_root=tmp_path,
             tools=inprocess_tools(tmp_path),
             max_tool_calls=settings.rootcause_max_tool_calls,
-            fix_model_name=settings.fix_model,
-            fix_chat=build_live_chat(
-                settings,
-                model=settings.fix_model,
-                model_env="MERIDIAN_FIX_MODEL",
-            ),
-            critic_model_name=settings.critic_model,
-            critic_chat=build_live_critic(settings),
+            fix_model_name=fix_model,
+            fix_chat=fix_chat,
+            critic_model_name=critic_model,
+            critic_chat=critic_chat,
             sandbox_timeout_s=settings.sandbox_timeout_s,
             sandbox_memory_mb=settings.sandbox_memory_mb,
             max_row_loss=settings.max_row_loss,
@@ -101,6 +100,12 @@ def _live(tmp_path: Path, dataset: str, fault: FaultType) -> None:
     case = next(item for item in state.cases.values() if item.incident.fault_type is fault)
     assert case.patch is not None
     scored = score(case, clean, label)
+    for call in state.llm_calls:
+        usd = "0.00" if call.provider not in {"anthropic", "xai"} else "paid"
+        print(
+            f"provider={call.provider} model={call.model} "
+            f"input_tokens={call.input_tokens} output_tokens={call.output_tokens} usd={usd}"
+        )
     print(
         json.dumps(
             {

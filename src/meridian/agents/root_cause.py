@@ -8,7 +8,7 @@ from string import Template
 from typing import Any, Protocol
 from uuid import UUID, uuid5
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -25,6 +25,9 @@ from meridian.contracts.llm_call import LLMCall
 from meridian.contracts.namespace import MERIDIAN_NAMESPACE
 from meridian.contracts.state import MeridianState
 from meridian.contracts.tool_call import ToolCall
+from meridian.llm.errors import RunAborted, call_model, unwrap_abort
+from meridian.llm.prompt_size import estimate_tokens, incident_json, tagged_human
+from meridian.llm.usage import make_llm_call
 from meridian.mcp_servers.client import invoke_tool
 from meridian.mcp_servers.impl import publish_incident
 from meridian.prompts import ROOT_CAUSE_PROMPT_NAME, ROOT_CAUSE_PROMPT_VERSION, load_prompt
@@ -72,6 +75,8 @@ class LoopTurn(BaseModel):
     tool_name: str = ""
     tool_call_id: str = ""
     tool_args_json: str = "{}"
+    tokens_before: int = 0
+    tokens_after: int = 0
 
 
 class LoopState(BaseModel):
@@ -90,19 +95,22 @@ class LoopState(BaseModel):
     causal_raw: str = ""
 
 
-def render_root_cause_prompt(state: MeridianState, *, max_tool_calls: int) -> str:
+def render_root_cause_prompt(state: MeridianState, *, max_tool_calls: int) -> tuple[str, str]:
     """Fill the versioned root-cause prompt for the single case in this branch."""
     _key, case = next(iter(state.cases.items()))
     incident = case.incident
     downstream = ",".join(incident.blast_radius) if incident.blast_radius else "-"
+    sent_json, full_json = incident_json(incident)
     template = Template(load_prompt(ROOT_CAUSE_PROMPT_NAME, ROOT_CAUSE_PROMPT_VERSION))
-    return template.substitute(
-        incident_json=incident.model_dump_json(),
-        fault_type=incident.fault_type.value,
-        dataset=incident.dataset,
-        downstream=downstream,
-        max_tool_calls=str(max_tool_calls),
-    )
+    fields = {
+        "fault_type": incident.fault_type.value,
+        "dataset": incident.dataset,
+        "downstream": downstream,
+        "max_tool_calls": str(max_tool_calls),
+    }
+    sent = template.substitute(incident_json=sent_json, **fields)
+    uncut = template.substitute(incident_json=full_json, **fields)
+    return sent, uncut
 
 
 def run_root_cause(
@@ -116,13 +124,15 @@ def run_root_cause(
     prompt_version: str = ROOT_CAUSE_PROMPT_VERSION,
 ) -> dict[str, object]:
     """Investigate one triaged case and return its hypothesis plus new calls."""
+    if state.aborted:
+        return {"aborted": True, "abort_reason": state.abort_reason}
     if len(state.cases) != 1:
         raise ValueError("a root-cause branch handles one incident")
     key, case = next(iter(state.cases.items()))
     if case.triage is None:
         raise ValueError("root cause runs after triage")
     publish_incident(evidence_root, case.incident)
-    prompt = render_root_cause_prompt(state, max_tool_calls=max_tool_calls)
+    sent, uncut = render_root_cause_prompt(state, max_tool_calls=max_tool_calls)
     loop = _compile_loop(
         chat=chat,
         tools=tools,
@@ -130,13 +140,26 @@ def run_root_cause(
         prompt_version=prompt_version,
         max_tool_calls=max_tool_calls,
     )
-    result = loop.invoke(
-        LoopState(
-            incident_id=case.incident.id,
-            prompt_version=prompt_version,
-            turns=[LoopTurn(kind="human", content=prompt)],
+    try:
+        result = loop.invoke(
+            LoopState(
+                incident_id=case.incident.id,
+                prompt_version=prompt_version,
+                turns=[
+                    LoopTurn(
+                        kind="human",
+                        content=sent,
+                        tokens_before=estimate_tokens(uncut),
+                        tokens_after=estimate_tokens(sent),
+                    )
+                ],
+            )
         )
-    )
+    except Exception as exc:
+        aborted = exc if isinstance(exc, RunAborted) else unwrap_abort(exc)
+        if aborted is None:
+            raise
+        return {"aborted": True, "abort_reason": str(aborted)}
     finished = result if isinstance(result, LoopState) else LoopState.model_validate(result)
     hypothesis = finished.hypothesis
     if hypothesis is None:
@@ -352,12 +375,8 @@ def _invoke_model(
     prompt_version: str,
 ) -> tuple[object, LLMCall]:
     started = time.perf_counter()
-    try:
-        response = bound.invoke(messages)
-        succeeded = True
-    except Exception:
-        response = None
-        succeeded = False
+    response, tokens_before, tokens_after = call_model(bound, messages)
+    succeeded = response is not None
     call = _call_record(
         response,
         model_name,
@@ -365,6 +384,9 @@ def _invoke_model(
         len(state.llm_calls) + 1,
         started,
         succeeded,
+        bound,
+        tokens_before,
+        tokens_after,
     )
     return response, call
 
@@ -378,10 +400,7 @@ def _invoke_structured(
     attempt: int,
 ) -> tuple[Hypothesis | None, str, LLMCall]:
     started = time.perf_counter()
-    try:
-        result = bound.invoke(messages)
-    except Exception:
-        result = None
+    result, tokens_before, tokens_after = call_model(bound, messages)
     draft = _draft_from(result)
     built = None if draft is None else _from_draft(draft, incident_id, prompt_version)
     hypothesis = None if built is None else built[0]
@@ -397,6 +416,9 @@ def _invoke_structured(
             attempt,
             started,
             hypothesis is not None,
+            bound,
+            tokens_before,
+            tokens_after,
         ),
     )
 
@@ -473,7 +495,13 @@ def _messages(turns: list[LoopTurn]) -> list[BaseMessage]:
     messages: list[BaseMessage] = []
     for turn in turns:
         if turn.kind == "human":
-            messages.append(HumanMessage(content=turn.content))
+            messages.append(
+                tagged_human(
+                    turn.content,
+                    before=turn.tokens_before,
+                    after=turn.tokens_after,
+                )
+            )
         elif turn.kind == "tool":
             messages.append(
                 ToolMessage(
@@ -508,32 +536,23 @@ def _call_record(
     attempt: int,
     started: float,
     succeeded: bool,
+    bound: object,
+    tokens_before: int,
+    tokens_after: int,
 ) -> LLMCall:
     message = raw.get("raw") if isinstance(raw, dict) else raw
-    usage = getattr(message, "usage_metadata", None)
-    input_tokens, output_tokens = _usage(usage)
-    return LLMCall(
+    return make_llm_call(
         node=NODE,
         model=model_name,
         prompt_version=prompt_version,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
+        raw=message,
         latency_ms=max(int((time.perf_counter() - started) * 1000), 0),
         attempt=attempt,
         succeeded=succeeded,
+        bound=bound,
+        tokens_before=tokens_before,
+        tokens_after=tokens_after,
     )
-
-
-def _usage(usage: object) -> tuple[int, int]:
-    if not isinstance(usage, dict):
-        return 0, 0
-    return _token(usage.get("input_tokens")), _token(usage.get("output_tokens"))
-
-
-def _token(value: object) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
-        return 0
-    return max(value, 0)
 
 
 def _args_hash(args: dict[str, object]) -> str:

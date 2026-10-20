@@ -20,7 +20,7 @@ Sentinel → Triage → RootCause → Fix → Critic → Verifier → SlackAppro
 Loop limits: Fix↔Critic max 3 rounds; Verifier failure routes back to Fix max 2 times, then escalates to human.
 
 ## Stack
-Python 3.11, uv, langgraph, langchain-core, langchain-anthropic, langchain-xai, pydantic v2,
+Python 3.11, uv, langgraph, langchain-core, langchain-ollama, langchain-openai, langchain-anthropic, langchain-xai, pydantic v2,
 pandera, ray, python-dotenv, slack-bolt, mcp, opentelemetry, postgres (audit log), pytest, ruff, mypy --strict.
 
 ## Phases (build ONE at a time; never start the next until the human confirms)
@@ -42,3 +42,4 @@ pandera, ray, python-dotenv, slack-bolt, mcp, opentelemetry, postgres (audit log
 - Never invent benchmark numbers. All metrics come from MERIDIAN-Bench runs.
 - Schema drift gate: `uv run python scripts/export_schemas.py && test -z "$(git status --porcelain schemas/)"`. Untracked schema files fail it, same as modifications.
 - ruff and mypy --strict must pass before any phase is declared done.
+- Free models first. Every live run defaults to the free tier. Paid providers run only when MERIDIAN_ALLOW_PAID=1 is set and a USD budget cap is configured. Any billing, auth or quota error stops the run immediately.

@@ -29,6 +29,7 @@
         "DATA_LOSS_RISK",
         "WRONG_REMEDIATION_KIND",
         "MISSING_TEST",
+        "OVER_BROAD_CHANGE",
         "OTHER"
       ],
       "title": "ObjectionKind",
@@ -41,6 +42,12 @@
     "approved": {
       "description": "Whether the reviewer accepts the patch.",
       "title": "Approved",
+      "type": "boolean"
+    },
+    "critic_degraded": {
+      "default": false,
+      "description": "True when structured output failed. That is not a rejection.",
+      "title": "Critic Degraded",
       "type": "boolean"
     },
     "objections": {

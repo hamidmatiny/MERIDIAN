@@ -8,6 +8,7 @@
         "DATA_LOSS_RISK",
         "WRONG_REMEDIATION_KIND",
         "MISSING_TEST",
+        "OVER_BROAD_CHANGE",
         "OTHER"
       ],
       "title": "ObjectionKind",

@@ -21,6 +21,7 @@ from meridian.contracts import (
     ColumnDescription,
     ColumnProfile,
     ContractSummary,
+    DryRunReport,
     EventPage,
     EventView,
     FailureSample,
@@ -333,6 +334,15 @@ def test_round_trip_covers_every_contract_model() -> None:
             summary="Distractor: routine CONFIG_CHANGE",
             diff_excerpt="unrelated",
             ref="event:6f9c0b3e-3c1a-4f5e-9a4b-8e2d1c0b7a12",
+        ),
+        "DryRunReport": DryRunReport(
+            rows_sampled=200,
+            rows_changed=4,
+            rows_changed_outside=1,
+            over_broad=True,
+            contracts_after=0,
+            psi_after="under threshold",
+            detail="",
         ),
         "GroundingViolation": GroundingViolation(
             field="causal_event_id",

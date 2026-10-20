@@ -7,8 +7,10 @@ or Slack asks explicitly with ``require_anthropic``, ``require_xai``, or ``requi
 from typing import Self
 
 from dotenv import load_dotenv
-from pydantic import AliasChoices, Field, SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from meridian.llm.family import model_family
 
 
 class MeridianConfigError(RuntimeError):
@@ -102,6 +104,78 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MERIDIAN_CRITIC_MODEL"),
         description="Model name for the critic. Required only for a live run.",
     )
+    triage_provider: str = Field(
+        default="ollama",
+        validation_alias=AliasChoices("MERIDIAN_TRIAGE_PROVIDER"),
+        description="Provider for triage: ollama, omniroute, anthropic, xai, or fake.",
+    )
+    rootcause_provider: str = Field(
+        default="ollama",
+        validation_alias=AliasChoices("MERIDIAN_ROOTCAUSE_PROVIDER"),
+        description="Provider for root cause.",
+    )
+    fix_provider: str = Field(
+        default="ollama",
+        validation_alias=AliasChoices("MERIDIAN_FIX_PROVIDER"),
+        description="Provider for the fix agent.",
+    )
+    critic_provider: str = Field(
+        default="ollama",
+        validation_alias=AliasChoices("MERIDIAN_CRITIC_PROVIDER"),
+        description="Provider for the critic. Must be a different model family from the fixer.",
+    )
+    triage_fallback: str = Field(
+        default="ollama,omniroute",
+        validation_alias=AliasChoices("MERIDIAN_TRIAGE_FALLBACK"),
+        description="Fallback providers for triage. Paid providers are not in the default.",
+    )
+    rootcause_fallback: str = Field(
+        default="ollama,omniroute",
+        validation_alias=AliasChoices("MERIDIAN_ROOTCAUSE_FALLBACK"),
+        description="Fallback providers for root cause.",
+    )
+    fix_fallback: str = Field(
+        default="ollama,omniroute",
+        validation_alias=AliasChoices("MERIDIAN_FIX_FALLBACK"),
+        description="Fallback providers for the fix agent.",
+    )
+    critic_fallback: str = Field(
+        default="ollama,omniroute",
+        validation_alias=AliasChoices("MERIDIAN_CRITIC_FALLBACK"),
+        description="Fallback providers for the critic.",
+    )
+    ollama_base_url: str = Field(
+        default="http://localhost:11434",
+        validation_alias=AliasChoices("OLLAMA_BASE_URL"),
+        description="Base URL for the local Ollama server.",
+    )
+    omniroute_base_url: str = Field(
+        default="http://localhost:20128/v1",
+        validation_alias=AliasChoices("OMNIROUTE_BASE_URL"),
+        description="OpenAI-compatible base URL for OmniRoute.",
+    )
+    allow_paid: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("MERIDIAN_ALLOW_PAID"),
+        description="When false, anthropic and xai are refused.",
+    )
+    max_usd_per_run: float | None = Field(
+        default=None,
+        ge=0,
+        validation_alias=AliasChoices("MERIDIAN_MAX_USD_PER_RUN"),
+        description="USD cap for one run. Required before a paid provider is called.",
+    )
+    max_usd_per_day: float | None = Field(
+        default=None,
+        ge=0,
+        validation_alias=AliasChoices("MERIDIAN_MAX_USD_PER_DAY"),
+        description="USD cap for the local day. Required before a paid provider is called.",
+    )
+    spend_path: str = Field(
+        default="data/spend.sqlite",
+        validation_alias=AliasChoices("MERIDIAN_SPEND_PATH"),
+        description="SQLite file that stores paid token spend.",
+    )
     sandbox_timeout_s: float = Field(
         default=20,
         gt=0,
@@ -158,12 +232,65 @@ class Settings(BaseSettings):
         "rootcause_model",
         "fix_model",
         "critic_model",
+        "max_usd_per_run",
+        "max_usd_per_day",
         mode="before",
     )
     @classmethod
     def empty_string_is_missing(cls, value: object) -> object:
         """Treat blank strings as unset so a placeholder cannot look configured."""
         return _blank_to_none(value)
+
+    @field_validator(
+        "triage_provider",
+        "rootcause_provider",
+        "fix_provider",
+        "critic_provider",
+        mode="before",
+    )
+    @classmethod
+    def provider_name(cls, value: object) -> object:
+        """Blank provider names fall back to the local default."""
+        if isinstance(value, str):
+            text = value.strip().lower()
+            return "ollama" if text == "" else text
+        return value
+
+    @field_validator("allow_paid", mode="before")
+    @classmethod
+    def paid_flag(cls, value: object) -> object:
+        """Accept 0 and 1. A non-empty string must not become true by accident."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            text = value.strip().lower()
+            if text in {"1", "true", "yes", "on"}:
+                return True
+            if text in {"0", "false", "no", "off", ""}:
+                return False
+        return value
+
+    @model_validator(mode="after")
+    def critic_family_differs(self) -> Self:
+        """The critic must not be the same model family as the fixer. See ADR-003."""
+        if self.fix_model and self.critic_model:
+            fixer = model_family(self.fix_model)
+            critic = model_family(self.critic_model)
+            if fixer == critic:
+                raise ValueError(
+                    f"critic family {critic} matches the fixer {self.fix_model}. "
+                    "Use a different family. Qwen fix with Gemma critic is the free pairing."
+                )
+        allowed = {"ollama", "omniroute", "anthropic", "xai", "fake"}
+        for label, provider in (
+            ("triage", self.triage_provider),
+            ("rootcause", self.rootcause_provider),
+            ("fix", self.fix_provider),
+            ("critic", self.critic_provider),
+        ):
+            if provider not in allowed:
+                raise ValueError(f"unknown {label} provider {provider}")
+        return self
 
     def require_anthropic(self) -> Self:
         """Return self when the Anthropic key is set; otherwise raise."""

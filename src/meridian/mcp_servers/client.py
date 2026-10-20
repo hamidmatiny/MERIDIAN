@@ -49,7 +49,7 @@ class _CompareQuery(BaseModel):
 
 class _SampleQuery(BaseModel):
     incident_id: str = Field(description="Incident id.")
-    n: int = Field(description="Number of rows, from 1 through 20.")
+    n: int = Field(description="Number of rows, from 1 through 10.")
 
 
 class _EventQuery(BaseModel):

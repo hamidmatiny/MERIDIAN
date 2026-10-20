@@ -110,7 +110,7 @@ def test_zero_intensity_skips_injection_and_triage(tmp_path: Path, monkeypatch, 
     assert state.llm_calls == []
 
 
-def test_live_without_keys_exits(tmp_path: Path, monkeypatch, capsys) -> None:
+def test_live_without_models_exits(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "")
     monkeypatch.setenv("XAI_API_KEY", "")
@@ -118,6 +118,7 @@ def test_live_without_keys_exits(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setenv("MERIDIAN_ROOTCAUSE_MODEL", "")
     monkeypatch.setenv("MERIDIAN_FIX_MODEL", "")
     monkeypatch.setenv("MERIDIAN_CRITIC_MODEL", "")
+    monkeypatch.setenv("MERIDIAN_ALLOW_PAID", "0")
     code = main(
         [
             "--dataset",
@@ -135,8 +136,8 @@ def test_live_without_keys_exits(tmp_path: Path, monkeypatch, capsys) -> None:
     )
     assert code == 2
     captured = capsys.readouterr().err
-    assert "ANTHROPIC_API_KEY" in captured
-    assert "XAI_API_KEY" not in captured
+    assert "MERIDIAN_TRIAGE_MODEL" in captured
+    assert "ANTHROPIC_API_KEY" not in captured
 
 
 def test_live_builder_reads_the_configured_model(monkeypatch) -> None:
@@ -193,23 +194,35 @@ def test_cli_rejects_intensity_and_seed_outside_range() -> None:
 
 
 def test_live_chat_uses_the_configured_model(monkeypatch) -> None:
-    monkeypatch.setattr(Settings, "require_anthropic", lambda self: None)
-    monkeypatch.setattr(Settings, "require_xai", lambda self: self)
-    monkeypatch.setattr("meridian.run.build_live_chat", lambda settings, **kwargs: "live-client")
-    monkeypatch.setattr("meridian.run.build_live_critic", lambda settings: "critic-client")
+    def _prepared(settings: Settings) -> tuple[tuple[str, str], ...]:
+        del settings
+        return (
+            ("triage-client", "configured-model"),
+            ("root-client", "configured-root"),
+            ("fix-client", "configured-fix"),
+            ("critic-client", "configured-critic"),
+        )
+
+    monkeypatch.setattr("meridian.run.build_prepared", _prepared)
     settings = Settings(
         _env_file=None,
-        anthropic_api_key=SecretStr("test-key"),
-        xai_api_key=SecretStr("xai-test"),
+        triage_provider="fake",
+        rootcause_provider="fake",
+        fix_provider="fake",
+        critic_provider="fake",
         triage_model="configured-model",
         rootcause_model="configured-root",
         fix_model="configured-fix",
         critic_model="configured-critic",
+        triage_fallback="fake",
+        rootcause_fallback="fake",
+        fix_fallback="fake",
+        critic_fallback="fake",
     )
     chats = _chat(settings, live=True)
-    assert chats.triage_chat == "live-client"
-    assert chats.root_chat == "live-client"
-    assert chats.fix_chat == "live-client"
+    assert chats.triage_chat == "triage-client"
+    assert chats.root_chat == "root-client"
+    assert chats.fix_chat == "fix-client"
     assert chats.critic_chat == "critic-client"
     assert chats.triage_model == "configured-model"
     assert chats.root_model == "configured-root"
@@ -217,14 +230,20 @@ def test_live_chat_uses_the_configured_model(monkeypatch) -> None:
     assert chats.critic_model == "configured-critic"
 
 
-def test_live_without_xai_exits(tmp_path: Path, monkeypatch, capsys) -> None:
+def test_live_paid_without_allowance_exits(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
     monkeypatch.setenv("XAI_API_KEY", "")
-    monkeypatch.setenv("MERIDIAN_TRIAGE_MODEL", "triage")
-    monkeypatch.setenv("MERIDIAN_ROOTCAUSE_MODEL", "root")
-    monkeypatch.setenv("MERIDIAN_FIX_MODEL", "fix")
-    monkeypatch.setenv("MERIDIAN_CRITIC_MODEL", "critic")
+    monkeypatch.setenv("MERIDIAN_ALLOW_PAID", "0")
+    monkeypatch.setenv("MERIDIAN_TRIAGE_PROVIDER", "anthropic")
+    monkeypatch.setenv("MERIDIAN_TRIAGE_MODEL", "claude-haiku")
+    monkeypatch.setenv("MERIDIAN_ROOTCAUSE_PROVIDER", "ollama")
+    monkeypatch.setenv("MERIDIAN_ROOTCAUSE_MODEL", "qwen3.5:4b")
+    monkeypatch.setenv("MERIDIAN_FIX_PROVIDER", "ollama")
+    monkeypatch.setenv("MERIDIAN_FIX_MODEL", "qwen3.5:4b")
+    monkeypatch.setenv("MERIDIAN_CRITIC_PROVIDER", "ollama")
+    monkeypatch.setenv("MERIDIAN_CRITIC_MODEL", "gemma4:e4b")
+    monkeypatch.setenv("MERIDIAN_TRIAGE_FALLBACK", "anthropic")
     code = main(
         [
             "--dataset",
@@ -242,8 +261,8 @@ def test_live_without_xai_exits(tmp_path: Path, monkeypatch, capsys) -> None:
     )
     assert code == 2
     captured = capsys.readouterr().err
-    assert "XAI_API_KEY" in captured
-    assert "ANTHROPIC_API_KEY" not in captured
+    assert "MERIDIAN_ALLOW_PAID" in captured
+    assert "XAI_API_KEY" not in captured
 
 
 def test_module_entrypoint_prints_help(monkeypatch) -> None:

@@ -27,16 +27,16 @@ from meridian.quality.evaluate import evaluate
 @pytest.mark.live
 def test_live_root_cause_on_schema_drift(tmp_path: Path) -> None:
     if os.environ.get("MERIDIAN_LIVE") != "1":
-        pytest.skip("set MERIDIAN_LIVE=1 to call Anthropic")
+        pytest.skip("set MERIDIAN_LIVE=1 to call the configured model")
     from uuid import uuid4
 
-    from meridian.agents.live_llm import build_live_chat
     from meridian.config import get_settings
+    from meridian.llm.router import build_node_chat
 
     settings = get_settings()
-    settings.require_anthropic()
-    if settings.rootcause_model is None:
-        pytest.fail("MERIDIAN_ROOTCAUSE_MODEL is not set")
+    if settings.rootcause_provider in {"anthropic", "xai"} and not settings.allow_paid:
+        pytest.skip("paid provider requires MERIDIAN_ALLOW_PAID=1")
+    chat, model_name = build_node_chat(settings, "rootcause")
     ref = write_partition(
         tmp_path,
         dataset="vehicle_telemetry",
@@ -91,12 +91,8 @@ def test_live_root_cause_on_schema_drift(tmp_path: Path) -> None:
     )
     updated = run_root_cause(
         MeridianState(run_id=uuid4(), cases={str(incident.id): case}),
-        model_name=settings.rootcause_model,
-        chat=build_live_chat(
-            settings,
-            model=settings.rootcause_model,
-            model_env="MERIDIAN_ROOTCAUSE_MODEL",
-        ),
+        model_name=model_name,
+        chat=chat,
         tools=inprocess_tools(tmp_path),
         max_tool_calls=settings.rootcause_max_tool_calls,
         evidence_root=tmp_path,
@@ -104,6 +100,12 @@ def test_live_root_cause_on_schema_drift(tmp_path: Path) -> None:
     hypothesis = updated["cases"][str(incident.id)].hypothesis
     assert hypothesis is not None
     scored = score(hypothesis, label)
+    for call in updated["llm_calls"]:
+        usd = "0.00" if call.provider not in {"anthropic", "xai"} else "paid"
+        print(
+            f"provider={call.provider} model={call.model} "
+            f"input_tokens={call.input_tokens} output_tokens={call.output_tokens} usd={usd}"
+        )
     print(
         json.dumps(
             {
