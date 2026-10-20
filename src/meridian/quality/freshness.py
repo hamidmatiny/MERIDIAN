@@ -41,6 +41,16 @@ def late_arrival(
     return deadline(partition_date, sla) + timedelta(seconds=extra_s)
 
 
+def lateness_seconds(
+    partition_date: date,
+    intensity: float,
+    sla: timedelta = DEFAULT_FRESHNESS_SLA,
+) -> int:
+    """Seconds past the deadline for :func:`late_arrival` at this intensity."""
+    late = late_arrival(partition_date, intensity, sla)
+    return int((late - deadline(partition_date, sla)).total_seconds())
+
+
 def is_late(metadata: PartitionMetadata, sla: timedelta = DEFAULT_FRESHNESS_SLA) -> bool:
     """True when the partition arrived after its deadline."""
     return metadata.arrived_at > deadline(metadata.partition_date, sla)

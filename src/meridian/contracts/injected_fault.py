@@ -1,8 +1,9 @@
 """Ground-truth label for one seeded fault injection."""
 
+from typing import Self
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from meridian.contracts.base import MeridianModel
 from meridian.contracts.fault_type import FaultType
@@ -29,3 +30,17 @@ class InjectedFault(MeridianModel):
         description="Strength of the injection, from just above 0 through 1.",
     )
     seed: int = Field(ge=0, description="Seed used to build the corrupted frame.")
+    arrival_delay_s: int | None = Field(
+        default=None,
+        ge=0,
+        description="Seconds past the freshness deadline. Set only for a late partition.",
+    )
+
+    @model_validator(mode="after")
+    def late_partition_records_its_delay(self) -> Self:
+        """A late partition must record how late it was. Other faults must not."""
+        if self.fault_type is FaultType.LATE_PARTITION and self.arrival_delay_s is None:
+            raise ValueError("LATE_PARTITION requires arrival_delay_s")
+        if self.fault_type is not FaultType.LATE_PARTITION and self.arrival_delay_s is not None:
+            raise ValueError("arrival_delay_s is only allowed for LATE_PARTITION")
+        return self

@@ -1,5 +1,6 @@
-"""Committed JSON Schemas must match a fresh export."""
+"""Committed JSON Schemas must match a fresh export, including untracked files."""
 
+import subprocess
 from pathlib import Path
 
 from meridian.schema_export import CONTRACT_SCHEMAS, export_schemas
@@ -32,6 +33,13 @@ def test_export_is_stable_and_drops_stale_files(tmp_path: Path) -> None:
     assert _texts(tmp_path) == first
 
 
-def test_committed_schemas_match_fresh_export(tmp_path: Path) -> None:
-    export_schemas(tmp_path)
-    assert _texts(tmp_path) == _texts(COMMITTED)
+def test_schema_tree_has_no_untracked_or_modified_files() -> None:
+    export_schemas(COMMITTED)
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "schemas/"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert status.stdout == ""

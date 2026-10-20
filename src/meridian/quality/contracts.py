@@ -6,8 +6,6 @@ import pandas as pd
 import pandera.pandas as pa
 from pandera.pandas import DataFrameModel, Field
 
-from meridian.pipeline.catalog import DATASETS
-
 
 class VehicleTelemetry(DataFrameModel):
     """Raw per-vehicle samples. ``speed_mps`` is meters per second, 0-60."""
@@ -83,6 +81,7 @@ MODELS: dict[str, type[DataFrameModel]] = {
 
 def model_for(dataset: str) -> type[DataFrameModel]:
     """Return the pandera model for ``dataset``."""
-    if dataset not in DATASETS:
-        raise KeyError(f"unknown dataset {dataset!r}")
-    return MODELS[dataset]
+    try:
+        return MODELS[dataset]
+    except KeyError as exc:
+        raise KeyError(f"unknown dataset {dataset!r}") from exc

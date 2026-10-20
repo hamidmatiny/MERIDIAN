@@ -1,15 +1,16 @@
 """Pure fault injectors. Same seed and inputs rebuild the same frame and label."""
 
-from uuid import UUID, uuid5
+from datetime import date
+from uuid import uuid5
 
 import numpy as np
 import pandas as pd
 
 from meridian.contracts.fault_type import FaultType
 from meridian.contracts.injected_fault import InjectedFault
+from meridian.contracts.namespace import MERIDIAN_NAMESPACE
 from meridian.pipeline.catalog import require_dataset
-
-_NAMESPACE = UUID("6f9c0b3e-3c1a-4f5e-9a4b-8e2d1c0b7a11")
+from meridian.quality.freshness import lateness_seconds
 
 
 def inject_schema_drift(
@@ -145,6 +146,8 @@ def inject_late_partition(
     _require_rng(rng)
     _require_intensity(intensity)
     require_dataset(dataset)
+    partition = date.fromisoformat(str(df["partition_date"].iloc[0]))
+    delay = lateness_seconds(partition, intensity)
     return df.copy(), _label(
         fault=FaultType.LATE_PARTITION,
         dataset=dataset,
@@ -152,6 +155,7 @@ def inject_late_partition(
         rows=0,
         intensity=intensity,
         seed=seed,
+        arrival_delay_s=delay,
     )
 
 
@@ -246,8 +250,10 @@ def _label(
     rows: int,
     intensity: float,
     seed: int,
+    arrival_delay_s: int | None = None,
 ) -> InjectedFault:
     ordered = list(columns)
+    delay = "" if arrival_delay_s is None else str(arrival_delay_s)
     raw = "|".join(
         [
             dataset,
@@ -256,14 +262,16 @@ def _label(
             str(seed),
             ",".join(ordered),
             str(rows),
+            delay,
         ]
     )
     return InjectedFault(
-        id=uuid5(_NAMESPACE, raw),
+        id=uuid5(MERIDIAN_NAMESPACE, raw),
         fault_type=fault,
         dataset=dataset,
         columns_affected=ordered,
         rows_affected=rows,
         intensity=intensity,
         seed=seed,
+        arrival_delay_s=arrival_delay_s,
     )

@@ -110,6 +110,7 @@ def test_round_trip_covers_every_contract_model() -> None:
             rows_affected=0,
             intensity=0.2,
             seed=1,
+            arrival_delay_s=17_280,
         ),
         "PartitionMetadata": PartitionMetadata(
             dataset="trip_summary",

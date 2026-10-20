@@ -30,7 +30,7 @@ pandera, ray, python-dotenv, slack-bolt, mcp, opentelemetry, postgres (audit log
 3 RootCause agent with MCP tools
 4 Fix / Critic / Verifier loop on Ray
 5 Slack approval gate + Postmortem
-6 MERIDIAN-Bench harness + published results
+6 MERIDIAN-Bench harness + published results + hard mode: clean data with realistic noise/outliers/legal edge values; report FP rate separately
 7 OpenTelemetry tracing, cost tracking, Docker Compose demo, README with benchmark tables
 
 ## Hard rules
@@ -40,4 +40,5 @@ pandera, ray, python-dotenv, slack-bolt, mcp, opentelemetry, postgres (audit log
 - No real LLM or Slack calls in unit tests. Use fakes and fixtures.
 - Never claim a step works. Give the exact command for the human to run, and wait for the real output.
 - Never invent benchmark numbers. All metrics come from MERIDIAN-Bench runs.
+- Schema drift gate: `uv run python scripts/export_schemas.py && test -z "$(git status --porcelain schemas/)"`. Untracked schema files fail it, same as modifications.
 - ruff and mypy --strict must pass before any phase is declared done.

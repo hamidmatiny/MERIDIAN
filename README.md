@@ -72,7 +72,7 @@ Generated Parquet under `data/` is gitignored.
 | `UNIT_MISMATCH` | Multiplies that fraction of rows by 3.6 on m/s columns, or by 1000 on kilometres. | Range checks, and `speed_matches_distance` on trips. |
 | `DUPLICATE_KEYS` | Appends copies of that fraction of rows, repeating the primary key. | `multiple_fields_uniqueness`. |
 | `LATE_PARTITION` | Leaves the frame unchanged and moves arrival past the 2 hour SLA. The offset grows with intensity and is always late. | `partition_arrival_sla` on `PartitionMetadata`. |
-| `DISTRIBUTION_SHIFT` | Power-warps the PSI column inside its generating range (`u ** (1 + 100 * intensity)`). On trips, distance is recomputed so the speed identity still holds. Legal ranges still hold. | PSI against the stored quantile profile, threshold 0.2. |
+| `DISTRIBUTION_SHIFT` | Power-warps the PSI column inside its generating range (`u ** (1 + 100 * intensity)`). On trips, distance is recomputed so the speed identity still holds. Legal ranges still hold. | PSI against a quantile profile fit on a separate clean partition. Threshold 0.2. |
 
 ## Quickstart
 
@@ -84,7 +84,7 @@ uv run ruff check .
 uv run ruff format --check .
 uv run mypy --strict src
 uv run pytest --cov=src/meridian --cov-fail-under=95 -q
-uv run python scripts/export_schemas.py && git diff --exit-code schemas/
+uv run python scripts/export_schemas.py && test -z "$(git status --porcelain schemas/)"
 uv run python -m meridian.injector --dataset vehicle_telemetry --fault DISTRIBUTION_SHIFT --intensity 0.3 --seed 42 --out data/
 ```
 

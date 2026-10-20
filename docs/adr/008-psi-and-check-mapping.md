@@ -8,7 +8,7 @@ A shifted numeric column can still sit inside its legal range, so `speed_mps` be
 
 ## Decision
 
-Distribution shift is the Population Stability Index against a stored quantile profile. The profile is the equal-probability grid of the column's generating interval (10 bins). The default threshold is 0.2 and is configurable on the `ReferenceProfile`. Values outside the stored edges are ignored by the histogram, so a unit conversion that leaves the generating range is not also scored as a shift.
+Distribution shift is the Population Stability Index against a quantile profile fit from a held-out clean partition. `fit_reference_profile` reads numeric columns on that frame and sets bin edges to its quantiles. It does not read the generator's bounds. The profile used to score a partition is fit on a different seed. The default threshold stays 0.2 and is configurable on the `ReferenceProfile`. Values outside the fitted edges are ignored by the histogram, so a unit conversion that leaves the reference range is not also scored as a shift. `quality/` does not import the generator.
 
 Freshness is separate from pandera. `PartitionMetadata.arrived_at` is late when it is after partition close plus the SLA. The default SLA is 2 hours.
 
@@ -18,7 +18,8 @@ Range checks and the trip speed/distance check map to `UNIT_MISMATCH`. Nullabili
 
 ## Consequences
 
-- A column can move a lot inside its legal range and still fail only PSI. The distribution-shift injector is written to do that.
+- A column can move a lot inside its legal range and still fail only PSI, when the profile was fit on a different clean partition. The distribution-shift injector is written to do that.
+- Fitting the profile from the generator's own bounds would make the detector a copy of the simulator. A held-out partition can disagree with a new seed, and that disagreement is a real false positive if it crosses 0.2. The threshold is not raised to hide it.
 - A unit conversion that also exceeds a range check is still one fault type, because both checks are in the `UNIT_MISMATCH` row of the table.
 - Adding a pandera check without a table entry fails closed at evaluation time.
 - The threshold and the SLA are arguments, not constants buried in a check body. The defaults are 0.2 and 2 hours.
@@ -27,4 +28,5 @@ Range checks and the trip speed/distance check map to `UNIT_MISMATCH`. Nullabili
 
 - A learned anomaly model. Rejected because the benchmark needs a deterministic pass/fail and a named threshold.
 - Kolmogorov-Smirnov against the same profile. Rejected in favor of PSI, which is the usual quantile-bin summary for data drift and is easy to explain next to a 0.2 cutoff.
+- Building the bins with `linspace` on the generator's published interval. Rejected. Those bounds are not available for a real pipeline, and using them here would score the simulator against itself.
 - Inferring the fault type from the check name with prefixes or keywords. Rejected. The table is the contract between the checks and `Incident.fault_type`.

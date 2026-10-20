@@ -13,12 +13,13 @@ from meridian.pipeline.lineage import downstream_of
 from meridian.quality.contracts import model_for
 from meridian.quality.evaluate import evaluate
 from meridian.quality.freshness import late_arrival, on_time_arrival
-from meridian.quality.reference import reference_profile
+from meridian.quality.reference import fit_reference_profile
 
 DATASETS = ("vehicle_telemetry", "trip_summary", "fleet_daily_kpi")
 INTENSITIES = (0.01, 0.1, 0.5)
 ROWS = 2_000
 SEED = 42
+HOLDOUT_SEED = 9_001
 DETECTED_AT = datetime(2026, 10, 20, 3, 0, tzinfo=UTC)
 
 
@@ -47,7 +48,7 @@ def test_injected_fault_is_detected(dataset: str, fault: FaultType, intensity: f
             partition_date=DEFAULT_PARTITION_DATE,
             arrived_at=arrived,
         ),
-        reference_profile(dataset),
+        fit_reference_profile(generate_dataset(dataset, HOLDOUT_SEED, rows=ROWS)),
         detected_at=DETECTED_AT,
     )
     assert label.fault_type is fault
@@ -59,3 +60,26 @@ def test_injected_fault_is_detected(dataset: str, fault: FaultType, intensity: f
     if fault is FaultType.DISTRIBUTION_SHIFT:
         model_for(dataset).validate(corrupted)
         assert {item.fault_type for item in incidents} == {FaultType.DISTRIBUTION_SHIFT}
+
+
+def test_the_same_fault_keeps_its_incident_id() -> None:
+    dataset = "vehicle_telemetry"
+    frame = generate_dataset(dataset, SEED, rows=ROWS)
+    corrupted, _label = INJECTORS[FaultType.NULL_EXPLOSION](
+        frame,
+        np.random.default_rng(SEED),
+        0.1,
+        dataset=dataset,
+        seed=SEED,
+    )
+    profile = fit_reference_profile(generate_dataset(dataset, HOLDOUT_SEED, rows=ROWS))
+    metadata = PartitionMetadata(
+        dataset=dataset,
+        partition_date=DEFAULT_PARTITION_DATE,
+        arrived_at=on_time_arrival(DEFAULT_PARTITION_DATE),
+    )
+    first = evaluate(dataset, corrupted, metadata, profile, detected_at=DETECTED_AT)
+    second = evaluate(dataset, corrupted, metadata, profile, detected_at=DETECTED_AT)
+    assert first and second
+    assert first[0].fault_type is FaultType.NULL_EXPLOSION
+    assert first[0].id == second[0].id

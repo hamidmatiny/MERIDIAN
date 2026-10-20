@@ -1,6 +1,7 @@
 """Injector determinism, the CLI, and the check map."""
 
 import runpy
+from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -13,9 +14,10 @@ from meridian.injector.cli import main
 from meridian.injector.faults import INJECTORS
 from meridian.pipeline.generate import generate_dataset
 from meridian.pipeline.parquet import read_parquet, write_parquet
+from meridian.quality.freshness import lateness_seconds
 from meridian.quality.mapping import CHECK_TO_FAULT, REASON_TO_FAULT, fault_type_for
 from meridian.quality.psi import population_stability_index
-from meridian.quality.reference import reference_profile
+from meridian.quality.reference import fit_reference_profile
 
 
 def test_same_seed_rebuilds_frames_and_labels() -> None:
@@ -140,6 +142,20 @@ def test_intensity_must_be_inside_the_open_unit_interval() -> None:
         )
 
 
+def test_late_partition_records_the_delay() -> None:
+    frame = generate_dataset("vehicle_telemetry", seed=4, rows=10)
+    _corrupted, label = INJECTORS[FaultType.LATE_PARTITION](
+        frame,
+        np.random.default_rng(4),
+        0.3,
+        dataset="vehicle_telemetry",
+        seed=4,
+    )
+    partition = date.fromisoformat(str(frame["partition_date"].iloc[0]))
+    assert label.arrival_delay_s == lateness_seconds(partition, 0.3)
+    assert label.rows_affected == 0
+
+
 def test_mapping_covers_every_fault_and_rejects_unknown_checks() -> None:
     assert set(CHECK_TO_FAULT.values()) == set(FaultType)
     assert fault_type_for("not_nullable", None) is FaultType.NULL_EXPLOSION
@@ -152,13 +168,13 @@ def test_mapping_covers_every_fault_and_rejects_unknown_checks() -> None:
     assert SchemaErrorReason.WRONG_DATATYPE in REASON_TO_FAULT
 
 
-def test_psi_is_low_on_the_generating_distribution_and_high_after_a_warp() -> None:
-    profile = reference_profile("vehicle_telemetry").columns[0]
-    values = np.linspace(profile.bin_edges[0], profile.bin_edges[-1], num=2_000, endpoint=False)
+def test_psi_is_low_on_a_fitted_profile_and_high_after_a_warp() -> None:
+    values = np.linspace(20.0, 40.0, num=2_000, endpoint=False)
+    frame = pd.DataFrame({"speed_mps": values})
+    frame.attrs["dataset"] = "vehicle_telemetry"
+    profile = fit_reference_profile(frame).columns[0]
     assert population_stability_index(values, profile) < 0.2
-    warped = profile.bin_edges[0] + (np.linspace(0, 1, 2_000, endpoint=False) ** 2) * (
-        profile.bin_edges[-1] - profile.bin_edges[0]
-    )
+    warped = 20.0 + (np.linspace(0.0, 1.0, 2_000, endpoint=False) ** 2) * 20.0
     assert population_stability_index(warped, profile) > 0.2
     assert population_stability_index(np.array([]), profile) == np.inf
     assert population_stability_index(np.array([1e9, -1e9]), profile) == np.inf

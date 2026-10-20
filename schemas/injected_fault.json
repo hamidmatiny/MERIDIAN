@@ -17,6 +17,20 @@
   "additionalProperties": false,
   "description": "The label MERIDIAN-Bench will score detections against.\n\nThe id is a UUID5 of the injection inputs, so the same inputs rebuild the\nsame label.",
   "properties": {
+    "arrival_delay_s": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Seconds past the freshness deadline. Set only for a late partition.",
+      "title": "Arrival Delay S"
+    },
     "columns_affected": {
       "description": "Columns the injector changed. Empty when only metadata moved.",
       "items": {

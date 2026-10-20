@@ -2,7 +2,7 @@
 
 import math
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid5
 
 import numpy as np
 import pandas as pd
@@ -10,6 +10,7 @@ from pandera.errors import SchemaError, SchemaErrorReason, SchemaErrors
 
 from meridian.contracts.fault_type import FaultType
 from meridian.contracts.incident import Incident, RowValue
+from meridian.contracts.namespace import MERIDIAN_NAMESPACE
 from meridian.contracts.partition_metadata import PartitionMetadata
 from meridian.contracts.reference_profile import ReferenceProfile
 from meridian.pipeline.lineage import downstream_of
@@ -56,7 +57,12 @@ def evaluate(
         bucket = grouped[fault_type]
         incidents.append(
             Incident(
-                id=uuid4(),
+                id=_incident_id(
+                    dataset_name,
+                    partition,
+                    model_for(dataset_name).__name__,
+                    fault_type,
+                ),
                 detected_at=moment,
                 dataset=dataset_name,
                 partition=partition,
@@ -69,6 +75,12 @@ def evaluate(
             )
         )
     return incidents
+
+
+def _incident_id(dataset: str, partition: str, contract_name: str, fault: FaultType) -> UUID:
+    """UUID5 of the partition and the fault. The same inputs rebuild the same id."""
+    payload = "|".join((dataset, partition, contract_name, fault.value))
+    return uuid5(MERIDIAN_NAMESPACE, payload)
 
 
 class _Bucket:
