@@ -221,9 +221,14 @@ def test_verdict_round_limits() -> None:
 
 def test_verification_rejects_pass_with_remaining_failures() -> None:
     make_verification(passed=True, failures_remaining=0)
-    make_verification(passed=False, failures_remaining=0)
-    with pytest.raises(ValidationError, match=r"failures_remaining"):
+    with pytest.raises(ValidationError, match=r"failures_remaining == 0"):
         make_verification(passed=True, failures_remaining=1)
+
+
+def test_verification_rejects_failure_with_zero_remaining() -> None:
+    make_verification(passed=False, failures_remaining=1)
+    with pytest.raises(ValidationError, match=r"failures_remaining > 0"):
+        make_verification(passed=False, failures_remaining=0)
     with pytest.raises(ValidationError):
         VerificationResult(
             patch_id=uuid4(),

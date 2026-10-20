@@ -449,13 +449,13 @@
           "type": "integer"
         },
         "failures_remaining": {
-          "description": "Contract failures still present after the patch.",
+          "description": "Contract failures still present after the patch. Must be 0 when passed is true and greater than 0 when passed is false.",
           "minimum": 0,
           "title": "Failures Remaining",
           "type": "integer"
         },
         "passed": {
-          "description": "True only when no contract failures remain.",
+          "description": "True only when failures_remaining is 0. False only when failures_remaining is greater than 0.",
           "title": "Passed",
           "type": "boolean"
         },

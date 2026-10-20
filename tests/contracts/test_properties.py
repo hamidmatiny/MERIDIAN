@@ -108,7 +108,7 @@ def consistent_states(draw: st.DrawFn) -> MeridianState:
     verification: VerificationResult | None = None
     if draw(st.booleans()):
         passed = draw(st.booleans())
-        failures = 0 if passed else draw(st.integers(min_value=0, max_value=5))
+        failures = 0 if passed else draw(st.integers(min_value=1, max_value=5))
         verification = VerificationResult(
             patch_id=patch.id if patch is not None else draw(st.uuids()),
             passed=passed,

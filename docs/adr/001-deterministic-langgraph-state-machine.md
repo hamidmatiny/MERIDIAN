@@ -12,10 +12,11 @@ The system will be a LangGraph state machine with a fixed node sequence:
 
 Sentinel → Triage → RootCause → Fix → Critic → Verifier → SlackApproval → Postmortem
 
-Two loops are part of the graph, and both have hard caps stored on `MeridianState`:
+Two loops are part of the graph, and both have hard caps stored on `MeridianState`.
 
-- Fix and Critic may exchange at most 3 rounds (`critic_rounds` ≤ 3).
-- A failed verification may route back to Fix at most 2 times. `fix_attempts` counts Fix executions, so its cap is 3: the original attempt plus those two retries. A further verifier failure escalates to a human.
+`critic_rounds` counts completed Fix/Critic exchanges. AGENTS.md caps that loop at 3 rounds, so the counter allows 0 through 3. Zero means the critic has not run. `Verdict.round` is a different field: the 1-based round stamped on one verdict, also limited to 1 through 3. The state does not require `verdict.round == critic_rounds`. Each value is checked against its own limit.
+
+`fix_attempts` counts Fix executions, not only the trips back from the verifier. AGENTS.md says a failed verification may route back to Fix at most 2 times. Those two reroutes sit on top of the original Fix, so the counter allows 0 through 3: attempt 1 is the first patch, attempts 2 and 3 are the two allowed reroutes. Zero means Fix has not run. A value of 4 is rejected. The next verifier failure after the third Fix execution escalates to a human.
 
 Phase 0 ships the state model and the caps. The graph nodes are planned and are not implemented yet.
 
