@@ -14,7 +14,7 @@ The later phases add a graph, data contracts, Ray, Slack, and model clients. Tho
 - `mypy --strict` typechecks `src`. The Pydantic plugin is enabled so model fields are visible to the checker.
 - `pytest` with `pytest-cov` is the test runner. Coverage on `src/meridian` must stay at or above 95 percent.
 - CI on push and pull request runs the same commands a reviewer runs locally: `uv sync`, `ruff check`, `ruff format --check`, `mypy --strict src`, `pytest` with the coverage gate, and the schema export drift check.
-- Settings use `pydantic-settings` (`BaseSettings`) with `SecretStr` for provider and Slack keys. `python-dotenv` still loads `.env` and does not override variables that are already set. The original dependency list did not name `pydantic-settings`; it is a direct dependency because that is the supported way to validate settings on load in Pydantic v2. Every key stays optional at import. Only `Settings.require_llm()` and `Settings.require_slack()` raise, and they name the missing variables.
+- Settings use `pydantic-settings` (`BaseSettings`) with `SecretStr` for provider and Slack keys. `python-dotenv` still loads `.env` and does not override variables that are already set. The original dependency list did not name `pydantic-settings`; it is a direct dependency because that is the supported way to validate settings on load in Pydantic v2. Every key stays optional at import. Only `Settings.require_anthropic()`, `Settings.require_xai()`, and `Settings.require_slack()` raise, and they name the missing variables.
 
 Runtime libraries for later phases (`langgraph`, LangChain providers, `pandera`, `ray`, `slack-bolt`, `mcp`) are declared now so the lockfile is stable. Phase 0 does not import them.
 

@@ -17,11 +17,11 @@ from meridian.contracts import (
     MeridianState,
     Patch,
     Postmortem,
-    Severity,
     Verdict,
     VerificationResult,
 )
 from meridian.contracts.approval import ApprovalDecision, ApprovalOutcome
+from meridian.contracts.incident_case import IncidentCase
 
 _WORDS = st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=1, max_size=12)
 _UTC = st.datetimes(
@@ -65,20 +65,23 @@ def incidents(draw: st.DrawFn) -> Incident:
         fault_type=draw(st.sampled_from(list(FaultType))),
         failing_checks=draw(st.lists(_WORDS, min_size=1, max_size=3)),
         sample_failure_rows=draw(st.lists(_ROW, max_size=50)),
-        severity=draw(st.one_of(st.none(), st.sampled_from(list(Severity)))),
+        severity=None,
         blast_radius=draw(st.lists(_WORDS, max_size=3)),
     )
 
 
 @st.composite
 def consistent_states(draw: st.DrawFn) -> MeridianState:
-    """Build a partial state whose parent ids agree whenever both sides exist."""
+    """Build a run whose case, when present, has agreeing parent ids."""
+    run_id = draw(st.uuids())
     incident = draw(st.one_of(st.none(), incidents()))
+    if incident is None:
+        return MeridianState(run_id=run_id)
     hypothesis: Hypothesis | None = None
     if draw(st.booleans()):
         hypothesis = Hypothesis(
             id=draw(st.uuids()),
-            incident_id=incident.id if incident is not None else draw(st.uuids()),
+            incident_id=incident.id,
             root_cause_summary=draw(_WORDS),
             evidence=[Evidence(source=draw(_WORDS), reference=draw(_WORDS), excerpt=draw(_WORDS))]
             if draw(st.booleans())
@@ -89,21 +92,23 @@ def consistent_states(draw: st.DrawFn) -> MeridianState:
     if draw(st.booleans()):
         patch = Patch(
             id=draw(st.uuids()),
-            incident_id=incident.id if incident is not None else draw(st.uuids()),
+            incident_id=incident.id,
             hypothesis_id=hypothesis.id if hypothesis is not None else draw(st.uuids()),
             diff=_DIFF,
             regression_test=draw(_WORDS),
             files_touched=[f"{draw(_WORDS)}.py"],
             author_model=draw(_WORDS),
         )
-    verdict: Verdict | None = None
+    verdicts: list[Verdict] = []
     if draw(st.booleans()):
-        verdict = Verdict(
-            patch_id=patch.id if patch is not None else draw(st.uuids()),
-            reviewer_model=draw(_WORDS),
-            approved=draw(st.booleans()),
-            objections=draw(st.lists(_WORDS, max_size=2)),
-            round=draw(st.integers(min_value=1, max_value=3)),
+        verdicts.append(
+            Verdict(
+                patch_id=patch.id if patch is not None else draw(st.uuids()),
+                reviewer_model=draw(_WORDS),
+                approved=draw(st.booleans()),
+                objections=draw(st.lists(_WORDS, max_size=2)),
+                round=draw(st.integers(min_value=1, max_value=3)),
+            )
         )
     verification: VerificationResult | None = None
     if draw(st.booleans()):
@@ -128,24 +133,25 @@ def consistent_states(draw: st.DrawFn) -> MeridianState:
     postmortem: Postmortem | None = None
     if draw(st.booleans()):
         postmortem = Postmortem(
-            incident_id=incident.id if incident is not None else draw(st.uuids()),
+            incident_id=incident.id,
             timeline=[],
             root_cause=draw(_WORDS),
             fix_summary=draw(_WORDS),
             time_to_resolution_s=draw(st.integers(min_value=0, max_value=10_000)),
             cost_usd=draw(_MONEY),
         )
-    return MeridianState(
+    case = IncidentCase(
         incident=incident,
         hypothesis=hypothesis,
         patch=patch,
-        verdict=verdict,
+        verdicts=verdicts,
         verification=verification,
         approval=approval,
         postmortem=postmortem,
         fix_attempts=draw(st.integers(min_value=0, max_value=3)),
         critic_rounds=draw(st.integers(min_value=0, max_value=3)),
     )
+    return MeridianState(run_id=run_id, cases={str(incident.id): case})
 
 
 @settings(max_examples=40, deadline=None, derandomize=True)
@@ -153,6 +159,7 @@ def consistent_states(draw: st.DrawFn) -> MeridianState:
 def test_incident_properties(incident: Incident) -> None:
     assert incident.detected_at.tzinfo is UTC
     assert incident.detected_at.utcoffset() == timedelta(0)
+    assert incident.severity is None
     assert len(incident.failing_checks) >= 1
     assert len(incident.sample_failure_rows) <= 50
     restored = Incident.model_validate_json(incident.model_dump_json())
@@ -196,22 +203,22 @@ def test_incident_rejects_oversized_samples(
 @settings(max_examples=30, deadline=None, derandomize=True)
 @given(state=consistent_states())
 def test_meridian_state_properties(state: MeridianState) -> None:
-    assert 0 <= state.fix_attempts <= 3
-    assert 0 <= state.critic_rounds <= 3
-    if state.incident is not None and state.hypothesis is not None:
-        assert state.hypothesis.incident_id == state.incident.id
-    if state.incident is not None and state.patch is not None:
-        assert state.patch.incident_id == state.incident.id
-    if state.hypothesis is not None and state.patch is not None:
-        assert state.patch.hypothesis_id == state.hypothesis.id
-    if state.patch is not None and state.verdict is not None:
-        assert state.verdict.patch_id == state.patch.id
-    if state.patch is not None and state.verification is not None:
-        assert state.verification.patch_id == state.patch.id
-    if state.patch is not None and state.approval is not None:
-        assert state.approval.patch_id == state.patch.id
-    if state.incident is not None and state.postmortem is not None:
-        assert state.postmortem.incident_id == state.incident.id
+    for key, case in state.cases.items():
+        assert key == str(case.incident.id)
+        assert case.incident.severity is None
+        assert 0 <= case.fix_attempts <= 3
+        assert 0 <= case.critic_rounds <= 3
+        assert case.severity is None or case.triage is not None
+        if case.hypothesis is not None:
+            assert case.hypothesis.incident_id == case.incident.id
+        if case.patch is not None:
+            assert case.patch.incident_id == case.incident.id
+        if case.hypothesis is not None and case.patch is not None:
+            assert case.patch.hypothesis_id == case.hypothesis.id
+        if case.patch is not None:
+            assert all(item.patch_id == case.patch.id for item in case.verdicts)
+        if case.postmortem is not None:
+            assert case.postmortem.incident_id == case.incident.id
     restored = MeridianState.model_validate_json(state.model_dump_json())
     assert restored == state
 
@@ -227,13 +234,22 @@ def test_state_rejects_mismatched_hypothesis_parent(incident: Incident, other: U
         confidence=0.4,
     )
     with pytest.raises(ValidationError, match=r"hypothesis.incident_id"):
-        MeridianState(incident=incident, hypothesis=hypothesis)
+        IncidentCase(incident=incident, hypothesis=hypothesis)
 
 
 @settings(max_examples=10, deadline=None, derandomize=True)
 @given(extra=st.integers(min_value=4, max_value=12))
-def test_state_rejects_counters_over_the_loop_limits(extra: int) -> None:
+def test_case_rejects_counters_over_the_loop_limits(extra: int) -> None:
+    incident = Incident(
+        id=UUID("6f9c0b3e-3c1a-4f5e-9a4b-8e2d1c0b7a11"),
+        detected_at=datetime(2026, 10, 19, tzinfo=UTC),
+        dataset="orders",
+        partition="dt",
+        contract_name="orders",
+        fault_type=FaultType.NULL_EXPLOSION,
+        failing_checks=["null_rate"],
+    )
     with pytest.raises(ValidationError):
-        MeridianState(fix_attempts=extra)
+        IncidentCase(incident=incident, fix_attempts=extra)
     with pytest.raises(ValidationError):
-        MeridianState(critic_rounds=extra)
+        IncidentCase(incident=incident, critic_rounds=extra)

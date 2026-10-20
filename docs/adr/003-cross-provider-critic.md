@@ -14,7 +14,7 @@ Phase 0 defines the `Patch` and `Verdict` contracts and the round cap. It does n
 
 ## Consequences
 
-- Two credentials are required before the loop can run: `ANTHROPIC_API_KEY` and `XAI_API_KEY`. `Settings.require_llm()` is the explicit check. Importing the package does not require them.
+- Two credentials are required before the critic loop can run: `ANTHROPIC_API_KEY` and `XAI_API_KEY`. `Settings.require_anthropic()` and `Settings.require_xai()` are the explicit checks. Importing the package does not require them. A node calls only the provider it uses.
 - A provider outage on either side stops the loop. That is preferred to a silent same-model review.
 - Each round costs two model calls. The cap of three rounds bounds that cost.
 - The verdict is data. It does not merge code and it does not decide that a replay passed. Those are separate steps.

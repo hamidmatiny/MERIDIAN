@@ -27,6 +27,7 @@ from meridian.contracts import (
     FaultType,
     Hypothesis,
     Incident,
+    IncidentCase,
     MeridianState,
     Patch,
     Postmortem,
@@ -71,9 +72,9 @@ def test_valid_incident_allows_unset_severity() -> None:
     assert incident.fault_type is FaultType.NULL_EXPLOSION
 
 
-def test_valid_incident_with_triage_fields() -> None:
-    incident = make_incident(severity=Severity.SEV2, blast_radius=["billing", "dashboards"])
-    assert incident.severity is Severity.SEV2
+def test_valid_incident_with_blast_radius_leaves_severity_unset() -> None:
+    incident = make_incident(blast_radius=["billing", "dashboards"])
+    assert incident.severity is None
     assert incident.blast_radius == ["billing", "dashboards"]
 
 
@@ -137,28 +138,28 @@ def test_sample_rows_accept_fifty_and_reject_fifty_one() -> None:
 
 
 def test_valid_hypothesis_patch_verdict_and_verification() -> None:
-    incident = make_incident(severity=Severity.SEV1)
+    incident = make_incident()
     hypothesis = make_hypothesis(incident_id=incident.id, confidence=0.0)
     patch = make_patch(incident_id=incident.id, hypothesis_id=hypothesis.id)
     verdict = make_verdict(patch_id=patch.id, round_number=3)
     verification = make_verification(patch_id=patch.id, passed=False, failures_remaining=2)
     approval = make_approval(patch_id=patch.id)
     postmortem = make_postmortem(incident_id=incident.id)
-    state = MeridianState(
+    case = IncidentCase(
         incident=incident,
         hypothesis=hypothesis,
         patch=patch,
-        verdict=verdict,
+        verdicts=[verdict],
         verification=verification,
         approval=approval,
         postmortem=postmortem,
         fix_attempts=MAX_FIX_ATTEMPTS,
         critic_rounds=MAX_CRITIC_ROUNDS,
     )
-    assert state.hypothesis is not None
-    assert state.hypothesis.evidence[0] == make_evidence()
-    assert state.verdict is not None
-    assert state.verdict.round == 3
+    assert case.hypothesis is not None
+    assert case.hypothesis.evidence[0] == make_evidence()
+    assert case.verdicts[0].round == 3
+    assert case.severity is None
     assert approval.decision is ApprovalOutcome.APPROVED
     assert postmortem.time_to_resolution_s == 300
 
@@ -376,55 +377,60 @@ def test_patch_requires_a_file_and_content() -> None:
 
 
 def test_empty_state_is_valid() -> None:
-    state = MeridianState()
-    assert state.incident is None
-    assert state.fix_attempts == 0
-    assert state.critic_rounds == 0
+    state = MeridianState(run_id=uuid4())
+    assert state.cases == {}
+    assert state.llm_calls == []
+    assert state.partitions == []
 
 
 def test_loop_counters_accept_their_limits_and_reject_the_next_value() -> None:
+    incident = make_incident()
     assert MAX_CRITIC_ROUNDS == 3
     assert MAX_FIX_ATTEMPTS == 3
-    assert MeridianState(fix_attempts=3, critic_rounds=3).fix_attempts == 3
+    assert IncidentCase(incident=incident, fix_attempts=3, critic_rounds=3).fix_attempts == 3
     with pytest.raises(ValidationError):
-        MeridianState(critic_rounds=4)
+        IncidentCase(incident=incident, critic_rounds=4)
     with pytest.raises(ValidationError):
-        MeridianState(fix_attempts=4)
+        IncidentCase(incident=incident, fix_attempts=4)
     with pytest.raises(ValidationError):
-        MeridianState(critic_rounds=-1)
+        IncidentCase(incident=incident, critic_rounds=-1)
     with pytest.raises(ValidationError):
-        MeridianState(fix_attempts=-1)
+        IncidentCase(incident=incident, fix_attempts=-1)
 
 
 def test_parent_ids_must_match_when_both_sides_are_present() -> None:
     incident = make_incident()
     hypothesis = make_hypothesis(incident_id=incident.id)
     patch = make_patch(incident_id=incident.id, hypothesis_id=hypothesis.id)
-    MeridianState(incident=incident, hypothesis=hypothesis, patch=patch)
+    IncidentCase(incident=incident, hypothesis=hypothesis, patch=patch)
 
     with pytest.raises(ValidationError, match=r"hypothesis.incident_id"):
-        MeridianState(incident=incident, hypothesis=make_hypothesis())
+        IncidentCase(incident=incident, hypothesis=make_hypothesis())
     with pytest.raises(ValidationError, match=r"patch.incident_id"):
-        MeridianState(incident=incident, patch=make_patch(hypothesis_id=hypothesis.id))
+        IncidentCase(incident=incident, patch=make_patch(hypothesis_id=hypothesis.id))
     with pytest.raises(ValidationError, match=r"patch.hypothesis_id"):
-        MeridianState(hypothesis=hypothesis, patch=make_patch(incident_id=incident.id))
+        IncidentCase(
+            incident=incident,
+            hypothesis=hypothesis,
+            patch=make_patch(incident_id=incident.id),
+        )
     with pytest.raises(ValidationError, match=r"verdict.patch_id"):
-        MeridianState(patch=patch, verdict=make_verdict())
+        IncidentCase(incident=incident, patch=patch, verdicts=[make_verdict()])
     with pytest.raises(ValidationError, match=r"verification.patch_id"):
-        MeridianState(patch=patch, verification=make_verification())
+        IncidentCase(incident=incident, patch=patch, verification=make_verification())
     with pytest.raises(ValidationError, match=r"approval.patch_id"):
-        MeridianState(patch=patch, approval=make_approval())
+        IncidentCase(incident=incident, patch=patch, approval=make_approval())
     with pytest.raises(ValidationError, match=r"postmortem.incident_id"):
-        MeridianState(incident=incident, postmortem=make_postmortem())
+        IncidentCase(incident=incident, postmortem=make_postmortem())
 
 
 def test_child_records_may_exist_before_their_parents() -> None:
-    state = MeridianState(
-        hypothesis=make_hypothesis(),
-        verdict=make_verdict(),
-        verification=make_verification(passed=False, failures_remaining=1),
-        approval=make_approval(),
-        postmortem=make_postmortem(),
+    incident = make_incident()
+    case = IncidentCase(
+        incident=incident,
+        hypothesis=make_hypothesis(incident_id=incident.id),
+        verdicts=[make_verdict()],
+        postmortem=make_postmortem(incident_id=incident.id),
     )
-    assert state.incident is None
-    assert state.patch is None
+    assert case.patch is None
+    assert case.severity is None

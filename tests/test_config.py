@@ -69,32 +69,40 @@ def test_unrelated_environment_variables_are_ignored(monkeypatch: pytest.MonkeyP
     Settings(_env_file=None)
 
 
-def test_require_llm_names_every_missing_key(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_require_anthropic_names_a_missing_key(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear(monkeypatch)
     with pytest.raises(MeridianConfigError, match=r"ANTHROPIC_API_KEY") as caught:
-        Settings(_env_file=None).require_llm()
-    assert caught.value.purpose == "LLM"
-    assert caught.value.missing == ("ANTHROPIC_API_KEY", "XAI_API_KEY")
+        Settings(_env_file=None).require_anthropic()
+    assert caught.value.purpose == "Anthropic"
+    assert caught.value.missing == ("ANTHROPIC_API_KEY",)
 
 
-def test_require_llm_names_only_the_missing_key(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_require_xai_names_a_missing_key(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear(monkeypatch)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     with pytest.raises(MeridianConfigError, match=r"XAI_API_KEY") as caught:
-        Settings(_env_file=None).require_llm()
+        Settings(_env_file=None).require_xai()
+    assert caught.value.purpose == "xAI"
     assert caught.value.missing == ("XAI_API_KEY",)
 
 
-def test_require_llm_returns_settings_when_both_keys_exist(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_require_anthropic_returns_settings_when_the_key_exists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _clear(monkeypatch)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
-    monkeypatch.setenv("XAI_API_KEY", "xai-test")
-    settings = Settings(_env_file=None).require_llm()
+    settings = Settings(_env_file=None).require_anthropic()
     assert settings.anthropic_api_key is not None
     assert settings.anthropic_api_key.get_secret_value() == "sk-ant-test"
+    assert "sk-ant-test" not in repr(settings)
+
+
+def test_require_xai_returns_settings_when_the_key_exists(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear(monkeypatch)
+    monkeypatch.setenv("XAI_API_KEY", "xai-test")
+    settings = Settings(_env_file=None).require_xai()
     assert settings.xai_api_key is not None
     assert settings.xai_api_key.get_secret_value() == "xai-test"
-    assert "sk-ant-test" not in repr(settings)
 
 
 def test_require_slack_names_missing_keys(monkeypatch: pytest.MonkeyPatch) -> None:

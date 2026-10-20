@@ -71,7 +71,7 @@ def _chat(settings: Settings, *, live: bool) -> tuple[StructuredChat, str]:
     if not live:
         fake = FakeTriageModel()
         return fake, fake.model_name
-    settings.require_llm()
+    settings.require_anthropic()
     live_chat = build_live_chat(settings)
     assert settings.triage_model is not None
     return live_chat, settings.triage_model
@@ -138,9 +138,10 @@ def _invoke(
             chat=chat,
             checkpointer=saver,
         )
+        run_id = uuid4()
         result = graph.invoke(
-            MeridianState(partitions=[ref]),
-            {"configurable": {"thread_id": str(uuid4())}},
+            MeridianState(run_id=run_id, partitions=[ref]),
+            {"configurable": {"thread_id": str(run_id)}},
         )
     return MeridianState.model_validate(result)
 

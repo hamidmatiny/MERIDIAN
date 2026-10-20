@@ -17,6 +17,7 @@ from tests.contracts.builders import (
 
 from meridian.contracts import (
     ColumnProfile,
+    IncidentCase,
     InjectedFault,
     MeridianState,
     PartitionMetadata,
@@ -49,13 +50,18 @@ def test_each_model_round_trips_through_json() -> None:
         make_approval(patch_id=patch.id),
         make_postmortem(incident_id=incident.id),
         MeridianState(
-            incident=incident,
-            hypothesis=hypothesis,
-            patch=patch,
-            fix_attempts=1,
-            critic_rounds=2,
+            run_id=UUID("11111111-1111-4111-8111-111111111111"),
+            cases={
+                str(incident.id): IncidentCase(
+                    incident=incident,
+                    hypothesis=hypothesis,
+                    patch=patch,
+                    fix_attempts=1,
+                    critic_rounds=2,
+                )
+            },
         ),
-        MeridianState(),
+        MeridianState(run_id=UUID("22222222-2222-4222-8222-222222222222")),
         InjectedFault(
             id=UUID("6f9c0b3e-3c1a-4f5e-9a4b-8e2d1c0b7a11"),
             fault_type=FaultType.NULL_EXPLOSION,
@@ -144,7 +150,18 @@ def test_round_trip_covers_every_contract_model() -> None:
         "ApprovalDecision": make_approval(patch_id=patch.id),
         "TimelineEvent": make_postmortem(incident_id=incident.id).timeline[0],
         "Postmortem": make_postmortem(incident_id=incident.id),
-        "MeridianState": MeridianState(incident=incident, critic_rounds=1),
+        "IncidentCase": IncidentCase(
+            incident=incident,
+            hypothesis=hypothesis,
+            patch=patch,
+            verdicts=[make_verdict(patch_id=patch.id)],
+            fix_attempts=1,
+            critic_rounds=1,
+        ),
+        "MeridianState": MeridianState(
+            run_id=UUID("33333333-3333-4333-8333-333333333333"),
+            cases={str(incident.id): IncidentCase(incident=incident, critic_rounds=1)},
+        ),
         "InjectedFault": InjectedFault(
             id=UUID("6f9c0b3e-3c1a-4f5e-9a4b-8e2d1c0b7a11"),
             fault_type=FaultType.LATE_PARTITION,

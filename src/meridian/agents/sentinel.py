@@ -7,6 +7,7 @@ import ray
 
 from meridian.agents.ray_runtime import ray_runtime
 from meridian.contracts.incident import Incident
+from meridian.contracts.incident_case import IncidentCase
 from meridian.contracts.partition_ref import PartitionRef
 from meridian.contracts.reference_profile import ReferenceProfile
 from meridian.contracts.state import MeridianState
@@ -79,6 +80,7 @@ def run_sentinel(
     num_cpus: int,
     detected_at: datetime,
 ) -> dict[str, object]:
-    """Write deduplicated incidents onto the graph state."""
+    """Open one case per deduplicated incident. Severity on the incident stays unset."""
     incidents = collect_ray(state.partitions, detected_at, num_cpus=num_cpus)
-    return {"incidents": incidents}
+    cases = {str(incident.id): IncidentCase(incident=incident) for incident in incidents}
+    return {"cases": cases}

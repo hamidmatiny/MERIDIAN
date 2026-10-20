@@ -13,6 +13,7 @@ from meridian.agents.fake_llm import FakeTriageModel
 from meridian.agents.severity_rules import floor_for
 from meridian.agents.triage import run_triage
 from meridian.contracts.fault_type import FaultType
+from meridian.contracts.incident_case import IncidentCase
 from meridian.contracts.reference_profile import ReferenceProfile
 from meridian.contracts.severity import Severity
 from meridian.contracts.state import MeridianState
@@ -44,16 +45,34 @@ def _incident(tmp_path: Path) -> MeridianState:
     )
     chosen = [item for item in incidents if item.fault_type is FaultType.SCHEMA_DRIFT]
     assert len(chosen) == 1
-    return MeridianState(partitions=[ref], incidents=chosen)
+    incident = chosen[0]
+    assert incident.severity is None
+    return MeridianState(
+        run_id=uuid4(),
+        partitions=[ref],
+        cases={str(incident.id): IncidentCase(incident=incident)},
+    )
+
+
+def _only_case(updated: dict[str, object]) -> IncidentCase:
+    cases = updated["cases"]
+    assert isinstance(cases, dict)
+    assert len(cases) == 1
+    case = next(iter(cases.values()))
+    assert isinstance(case, IncidentCase)
+    assert case.triage is not None
+    return case
 
 
 def test_llm_cannot_lower_a_sev2_floor(tmp_path: Path) -> None:
     state = _incident(tmp_path)
-    incident = state.incidents[0]
+    incident = next(iter(state.cases.values())).incident
     floor = floor_for(incident.fault_type, len(incident.blast_radius))
     assert floor.value == "SEV2"
     updated = run_triage(state, model_name="fake-triage", chat=FakeTriageModel())
-    result = updated["triage_results"][0]
+    case = _only_case(updated)
+    result = case.triage
+    assert result is not None
     assert result.llm_severity is not None
     assert result.llm_severity.value == "SEV4"
     assert result.floor_severity is floor
@@ -63,7 +82,8 @@ def test_llm_cannot_lower_a_sev2_floor(tmp_path: Path) -> None:
     assert result.prompt_version == "v1"
     assert updated["llm_calls"][0].succeeded is True
     assert updated["llm_calls"][0].input_tokens == 12
-    assert updated["incidents"][0].severity is result.final_severity
+    assert case.incident.severity is None
+    assert case.severity is result.final_severity
 
 
 def test_two_invalid_replies_degrade_to_the_floor(tmp_path: Path) -> None:
@@ -73,7 +93,8 @@ def test_two_invalid_replies_degrade_to_the_floor(tmp_path: Path) -> None:
         model_name="fake-triage",
         chat=FakeTriageModel(failures=2),
     )
-    result = updated["triage_results"][0]
+    result = _only_case(updated).triage
+    assert result is not None
     assert result.triage_degraded is True
     assert result.llm_severity is None
     assert result.final_severity is result.floor_severity
@@ -94,15 +115,32 @@ def test_live_triage_smoke(tmp_path: Path) -> None:
     from meridian.config import get_settings
 
     settings = get_settings()
-    settings.require_llm()
+    settings.require_anthropic()
     assert settings.triage_model is not None
     updated = run_triage(
         _incident(tmp_path),
         model_name=settings.triage_model,
         chat=build_live_chat(settings),
     )
-    assert updated["triage_results"]
-    assert updated["llm_calls"]
+    case = _only_case(updated)
+    assert case.triage is not None
+    assert case.severity is case.triage.final_severity
+    assert case.incident.severity is None
+    print(
+        json.dumps(
+            {
+                "severity": case.severity.value if case.severity is not None else None,
+                "rationale": case.triage.rationale,
+                "llm_severity": (
+                    None if case.triage.llm_severity is None else case.triage.llm_severity.value
+                ),
+                "floor_severity": case.triage.floor_severity.value,
+                "final_severity": case.triage.final_severity.value,
+                "llm_calls": [call.model_dump(mode="json") for call in updated["llm_calls"]],
+            },
+            indent=2,
+        )
+    )
 
 
 class _WrongIncident:
@@ -150,7 +188,8 @@ class _Raises:
 
 def test_mismatched_incident_id_degrades(tmp_path: Path) -> None:
     updated = run_triage(_incident(tmp_path), model_name="fake-triage", chat=_WrongIncident())
-    result = updated["triage_results"][0]
+    result = _only_case(updated).triage
+    assert result is not None
     assert result.triage_degraded is True
     assert updated["llm_calls"][0].succeeded is False
     assert updated["llm_calls"][0].output_tokens == 0
@@ -158,7 +197,9 @@ def test_mismatched_incident_id_degrades(tmp_path: Path) -> None:
 
 def test_model_exception_degrades_to_the_floor(tmp_path: Path) -> None:
     updated = run_triage(_incident(tmp_path), model_name="fake-triage", chat=_Raises())
-    assert updated["triage_results"][0].triage_degraded is True
+    result = _only_case(updated).triage
+    assert result is not None
+    assert result.triage_degraded is True
     assert updated["llm_calls"][0].input_tokens == 0
 
 

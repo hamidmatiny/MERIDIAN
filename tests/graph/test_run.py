@@ -30,12 +30,18 @@ def test_fake_schema_drift_run_prints_state(tmp_path: Path, monkeypatch, capsys)
     )
     assert code == 0
     state = MeridianState.model_validate_json(capsys.readouterr().out)
-    assert state.incidents
-    assert state.triage_results
-    drift = next(item for item in state.triage_results if item.floor_severity.value == "SEV2")
-    assert drift.final_severity.value == "SEV2"
-    assert drift.llm_severity is not None
-    assert drift.llm_severity.value == "SEV4"
+    assert state.cases
+    drift = next(
+        case
+        for case in state.cases.values()
+        if case.triage is not None and case.triage.floor_severity.value == "SEV2"
+    )
+    assert drift.triage is not None
+    assert drift.incident.severity is None
+    assert drift.severity is not None
+    assert drift.severity.value == "SEV2"
+    assert drift.triage.llm_severity is not None
+    assert drift.triage.llm_severity.value == "SEV4"
 
 
 def test_zero_intensity_skips_injection_and_triage(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -56,8 +62,7 @@ def test_zero_intensity_skips_injection_and_triage(tmp_path: Path, monkeypatch, 
     )
     assert code == 0
     state = MeridianState.model_validate_json(capsys.readouterr().out)
-    assert state.incidents == []
-    assert state.triage_results == []
+    assert state.cases == {}
     assert state.llm_calls == []
 
 
@@ -82,7 +87,9 @@ def test_live_without_keys_exits(tmp_path: Path, monkeypatch, capsys) -> None:
         ]
     )
     assert code == 2
-    assert "ANTHROPIC_API_KEY" in capsys.readouterr().err
+    captured = capsys.readouterr().err
+    assert "ANTHROPIC_API_KEY" in captured
+    assert "XAI_API_KEY" not in captured
 
 
 def test_live_builder_reads_the_configured_model(monkeypatch) -> None:
@@ -139,7 +146,7 @@ def test_cli_rejects_intensity_and_seed_outside_range() -> None:
 
 
 def test_live_chat_uses_the_configured_model(monkeypatch) -> None:
-    monkeypatch.setattr(Settings, "require_llm", lambda self: None)
+    monkeypatch.setattr(Settings, "require_anthropic", lambda self: None)
     monkeypatch.setattr("meridian.run.build_live_chat", lambda settings: "live-client")
     settings = Settings(
         _env_file=None,

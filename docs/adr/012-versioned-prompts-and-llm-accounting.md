@@ -17,7 +17,7 @@ Every attempt, including a failed parse, appends an `LLMCall`: node, model, prom
 - A prompt change is a new file version, and old runs still name the version they used.
 - `MeridianState.llm_calls` is the ledger Phase 7 will sum. This phase does not compute a dollar cost.
 - The fake model is deterministic, so unit tests and the default CLI do not need a network or an API key.
-- `--live` calls `Settings.require_llm()` first and exits with the missing key names when they are absent.
+- `--live` calls `Settings.require_anthropic()` first and exits with the missing key name when it is absent. Triage does not require the xAI key.
 
 ## Alternatives considered
 

@@ -40,7 +40,7 @@ flowchart TD
 | SlackApproval | LangGraph interrupt. A human approves, rejects, or the request times out. |
 | Postmortem | Write the incident report. |
 
-Loop limits, already enforced on `MeridianState`: Fix and Critic stop after 3 rounds. A failed verification may send the work back to Fix at most twice (3 Fix executions total), then the run escalates to a human.
+Loop limits, already enforced on each `IncidentCase`: Fix and Critic stop after 3 rounds. A failed verification may send the work back to Fix at most twice (3 Fix executions total), then the run escalates to a human.
 
 ## Phases
 
@@ -57,7 +57,7 @@ Loop limits, already enforced on `MeridianState`: Fix and Critic stop after 3 ro
 
 ## What is in this tree
 
-- `src/meridian/contracts/` — frozen Pydantic models, including `InjectedFault` and `PartitionMetadata`.
+- `src/meridian/contracts/` — frozen Pydantic models. A run is `MeridianState`: partitions, `llm_calls`, and one `IncidentCase` per incident.
 - `src/meridian/pipeline/` — seeded generators for the three fleet datasets, plus `lineage.yaml`.
 - `src/meridian/quality/` — pandera models, PSI, the freshness SLA, and `evaluate`, which returns `Incident` records.
 - `src/meridian/agents/` — Sentinel on Ray, the severity floor, and Triage.
@@ -65,7 +65,7 @@ Loop limits, already enforced on `MeridianState`: Fix and Critic stop after 3 ro
 - `src/meridian/prompts/triage.v1.md` — the versioned triage prompt.
 - `src/meridian/run.py` — `python -m meridian.run`. `--fake-llm` is the default. `--live` calls Claude.
 - `src/meridian/injector/` — one injector per fault type, and the `python -m meridian.injector` CLI.
-- `src/meridian/config.py` — settings loaded from the environment and `.env`. Missing keys do not crash import. `Settings.require_llm()` and `Settings.require_slack()` raise when a caller actually needs those credentials.
+- `src/meridian/config.py` — settings loaded from the environment and `.env`. Missing keys do not crash import. `Settings.require_anthropic()`, `Settings.require_xai()`, and `Settings.require_slack()` raise when a caller actually needs those credentials. `--live` asks only for Anthropic.
 - `schemas/` — JSON Schema generated from the contracts.
 - `docs/adr/` — ADR-001 through ADR-013.
 - `.github/workflows/ci.yml` — the checks below.

@@ -26,7 +26,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "A data-quality failure on one dataset partition.\n\n``severity`` stays unset until triage. ``sample_failure_rows`` holds at most\n50 scalar rows.",
+  "description": "A data-quality failure on one dataset partition.\n\n``severity`` stays unset. The effective severity is ``IncidentCase.severity``.\n``sample_failure_rows`` holds at most 50 scalar rows.",
   "properties": {
     "blast_radius": {
       "description": "Downstream datasets affected by this incident.",
@@ -114,7 +114,7 @@
         }
       ],
       "default": null,
-      "description": "Triage severity. Unset until Triage runs."
+      "description": "Stays unset. Read severity from IncidentCase.severity."
     }
   },
   "required": [

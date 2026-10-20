@@ -8,13 +8,16 @@ Sentinel can finish and the process can die before Triage. Re-running Sentinel w
 
 ## Decision
 
-The compiled graph uses `langgraph-checkpoint-sqlite`. The file path is `MERIDIAN_CHECKPOINT_PATH` (default `data/meridian-checkpoints.sqlite`). The thread id is the run id. State is `MeridianState`: Sentinel writes `incidents`, and the conditional edge sends an empty list to END and a non-empty list to Triage. Triage writes one `TriageResult` per incident.
+The compiled graph uses `langgraph-checkpoint-sqlite`. The file path is `MERIDIAN_CHECKPOINT_PATH` (default `data/meridian-checkpoints.sqlite`). The thread id is `MeridianState.run_id`.
 
-A test interrupts after Sentinel, invokes again with the same thread id, and checks that Sentinel's function ran once and Triage then completes.
+Sentinel writes one `IncidentCase` per incident into `cases`. The conditional edge returns a LangGraph `Send` for each case that has no triage yet, or END when `cases` is empty. Each triage branch receives only its own case and returns that case plus the calls it made. `merge_cases` keeps every incident id and replaces only the key being written. `append_llm_calls` concatenates the new calls onto the run. A node must return only the calls it just made, because the reducer appends.
+
+A test interrupts after Sentinel, invokes again with the same thread id, and checks that Sentinel's function ran once and each open case is then triaged.
 
 ## Consequences
 
 - Resume does not re-enter a node that already finished, so Sentinel does not start Ray again on that path.
+- Parallel triage branches reduce by incident id, so one branch cannot replace another incident's case or its calls.
 - The checkpoint file is local state. `data/` is gitignored.
 - The checkpointer is SQLite, not Postgres. The audit database remains a later phase.
 - `detected_at` is captured when the graph is built, so the incidents stored in the checkpoint keep that timestamp.

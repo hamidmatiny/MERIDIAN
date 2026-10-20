@@ -18,8 +18,8 @@ _MAX_SAMPLE_ROWS = 50
 class Incident(MeridianModel):
     """A data-quality failure on one dataset partition.
 
-    ``severity`` stays unset until triage. ``sample_failure_rows`` holds at most
-    50 scalar rows.
+    ``severity`` stays unset. The effective severity is ``IncidentCase.severity``.
+    ``sample_failure_rows`` holds at most 50 scalar rows.
     """
 
     id: UUID = Field(description="Stable identifier for this incident.")
@@ -41,7 +41,7 @@ class Incident(MeridianModel):
     )
     severity: Severity | None = Field(
         default=None,
-        description="Triage severity. Unset until Triage runs.",
+        description="Stays unset. Read severity from IncidentCase.severity.",
     )
     blast_radius: list[NonBlank] = Field(
         default_factory=list,

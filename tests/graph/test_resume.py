@@ -1,6 +1,7 @@
 """Checkpoint resume runs triage once and does not repeat Sentinel."""
 
 from pathlib import Path
+from uuid import uuid4
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 from tests.agents.support import DETECTED_AT, write_partition
@@ -40,12 +41,11 @@ def test_clean_partition_stops_after_sentinel(tmp_path: Path, monkeypatch) -> No
         )
         result = MeridianState.model_validate(
             graph.invoke(
-                MeridianState(partitions=[ref]),
+                MeridianState(run_id=uuid4(), partitions=[ref]),
                 {"configurable": {"thread_id": "clean"}},
             )
         )
-    assert result.incidents == []
-    assert result.triage_results == []
+    assert result.cases == {}
     assert result.llm_calls == []
     assert triage_calls["n"] == 0
 
@@ -78,20 +78,25 @@ def test_resume_after_sentinel_does_not_rerun_it(tmp_path: Path, monkeypatch) ->
             interrupt_after=["sentinel"],
         )
         config = {"configurable": {"thread_id": "resume-me"}}
-        paused = MeridianState.model_validate(graph.invoke(MeridianState(partitions=[ref]), config))
-        assert paused.incidents
-        assert paused.triage_results == []
+        paused = MeridianState.model_validate(
+            graph.invoke(MeridianState(run_id=uuid4(), partitions=[ref]), config)
+        )
+        assert paused.cases
+        assert all(case.triage is None for case in paused.cases.values())
+        assert all(case.severity is None for case in paused.cases.values())
         assert sentinel_calls["n"] == 1
         finished = MeridianState.model_validate(graph.invoke(None, config))
     assert sentinel_calls["n"] == 1
-    assert finished.triage_results
-    schema_id = next(
-        incident.id
-        for incident in finished.incidents
-        if incident.fault_type is FaultType.SCHEMA_DRIFT
-    )
-    schema = [item for item in finished.triage_results if item.incident_id == schema_id]
+    schema = [
+        case
+        for case in finished.cases.values()
+        if case.incident.fault_type is FaultType.SCHEMA_DRIFT
+    ]
     assert schema
-    assert schema[0].llm_severity is not None
-    assert schema[0].llm_severity.value == "SEV4"
-    assert schema[0].final_severity.value == "SEV2"
+    assert schema[0].triage is not None
+    assert schema[0].incident.severity is None
+    assert schema[0].triage.llm_severity is not None
+    assert schema[0].triage.llm_severity.value == "SEV4"
+    assert schema[0].severity is schema[0].triage.final_severity
+    assert schema[0].severity is not None
+    assert schema[0].severity.value == "SEV2"

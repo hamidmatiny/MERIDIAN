@@ -50,21 +50,18 @@ def run_triage(
     chat: StructuredChat,
     prompt_version: str = TRIAGE_PROMPT_VERSION,
 ) -> dict[str, object]:
-    """Produce one TriageResult per incident and append every model attempt."""
-    results: list[TriageResult] = []
-    calls: list[LLMCall] = list(state.llm_calls)
-    updated: list[Incident] = []
-    for incident in state.incidents:
-        result, attempts = _triage_one(
-            incident,
-            model_name=model_name,
-            chat=chat,
-            prompt_version=prompt_version,
-        )
-        results.append(result)
-        calls.extend(attempts)
-        updated.append(incident.model_copy(update={"severity": result.final_severity}))
-    return {"incidents": updated, "triage_results": results, "llm_calls": calls}
+    """Triage the single case in this branch. Return only the new model calls."""
+    if len(state.cases) != 1:
+        raise ValueError("a triage branch handles one incident")
+    key, case = next(iter(state.cases.items()))
+    result, attempts = _triage_one(
+        case.incident,
+        model_name=model_name,
+        chat=chat,
+        prompt_version=prompt_version,
+    )
+    updated = case.model_copy(update={"triage": result})
+    return {"cases": {key: updated}, "llm_calls": attempts}
 
 
 def _triage_one(

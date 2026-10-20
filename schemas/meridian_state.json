@@ -140,7 +140,7 @@
     },
     "Incident": {
       "additionalProperties": false,
-      "description": "A data-quality failure on one dataset partition.\n\n``severity`` stays unset until triage. ``sample_failure_rows`` holds at most\n50 scalar rows.",
+      "description": "A data-quality failure on one dataset partition.\n\n``severity`` stays unset. The effective severity is ``IncidentCase.severity``.\n``sample_failure_rows`` holds at most 50 scalar rows.",
       "properties": {
         "blast_radius": {
           "description": "Downstream datasets affected by this incident.",
@@ -228,7 +228,7 @@
             }
           ],
           "default": null,
-          "description": "Triage severity. Unset until Triage runs."
+          "description": "Stays unset. Read severity from IncidentCase.severity."
         }
       },
       "required": [
@@ -241,6 +241,117 @@
         "failing_checks"
       ],
       "title": "Incident",
+      "type": "object"
+    },
+    "IncidentCase": {
+      "additionalProperties": false,
+      "description": "The response record for a single incident.\n\nEffective severity is ``triage.final_severity``. ``Incident.severity`` stays unset.",
+      "properties": {
+        "approval": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApprovalDecision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Human approval decision, if the gate has completed."
+        },
+        "critic_rounds": {
+          "default": 0,
+          "description": "Completed Fix/Critic rounds so far. Maximum is 3.",
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Critic Rounds",
+          "type": "integer"
+        },
+        "fix_attempts": {
+          "default": 0,
+          "description": "Fix executions so far. Maximum is 3 (initial attempt plus two retries).",
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Fix Attempts",
+          "type": "integer"
+        },
+        "hypothesis": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Hypothesis"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Current root-cause hypothesis, if one has been proposed."
+        },
+        "incident": {
+          "$ref": "#/$defs/Incident",
+          "description": "The detected incident. Severity on it stays unset."
+        },
+        "patch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Patch"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Current patch, if Fix has produced one."
+        },
+        "postmortem": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Postmortem"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Incident report, if the loop has finished."
+        },
+        "triage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TriageResult"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Triage decision for this incident, once Triage has run."
+        },
+        "verdicts": {
+          "description": "Critic verdicts for this case, in the order they were recorded.",
+          "items": {
+            "$ref": "#/$defs/Verdict"
+          },
+          "title": "Verdicts",
+          "type": "array"
+        },
+        "verification": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VerificationResult"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Latest deterministic replay result, if any."
+        }
+      },
+      "required": [
+        "incident"
+      ],
+      "title": "IncidentCase",
       "type": "object"
     },
     "LLMCall": {
@@ -695,67 +806,15 @@
     }
   },
   "additionalProperties": false,
-  "description": "Partial graph state. Later nodes fill fields; parent ids must agree when both exist.",
+  "description": "Checkpointed run state. Loop limits live on each ``IncidentCase``.",
   "properties": {
-    "approval": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/ApprovalDecision"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Human approval decision, if the gate has completed."
-    },
-    "critic_rounds": {
-      "default": 0,
-      "description": "Completed Fix/Critic rounds so far. Maximum is 3.",
-      "maximum": 3,
-      "minimum": 0,
-      "title": "Critic Rounds",
-      "type": "integer"
-    },
-    "fix_attempts": {
-      "default": 0,
-      "description": "Fix executions so far. Maximum is 3 (initial attempt plus two retries).",
-      "maximum": 3,
-      "minimum": 0,
-      "title": "Fix Attempts",
-      "type": "integer"
-    },
-    "hypothesis": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Hypothesis"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Current root-cause hypothesis, if one has been proposed."
-    },
-    "incident": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Incident"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Incident under response, if detected."
-    },
-    "incidents": {
-      "description": "Incidents Sentinel emitted, deduplicated by id.",
-      "items": {
-        "$ref": "#/$defs/Incident"
+    "cases": {
+      "additionalProperties": {
+        "$ref": "#/$defs/IncidentCase"
       },
-      "title": "Incidents",
-      "type": "array"
+      "description": "One case per incident, keyed by incident id.",
+      "title": "Cases",
+      "type": "object"
     },
     "llm_calls": {
       "description": "Every model attempt made during the run.",
@@ -773,63 +832,16 @@
       "title": "Partitions",
       "type": "array"
     },
-    "patch": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Patch"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Current patch, if Fix has produced one."
-    },
-    "postmortem": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Postmortem"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Incident report, if the loop has finished."
-    },
-    "triage_results": {
-      "description": "One triage decision per incident.",
-      "items": {
-        "$ref": "#/$defs/TriageResult"
-      },
-      "title": "Triage Results",
-      "type": "array"
-    },
-    "verdict": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Verdict"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Latest critic verdict, if any."
-    },
-    "verification": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/VerificationResult"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Latest deterministic replay result, if any."
+    "run_id": {
+      "description": "Identity of this run. Also the checkpoint thread id.",
+      "format": "uuid",
+      "title": "Run Id",
+      "type": "string"
     }
   },
+  "required": [
+    "run_id"
+  ],
   "title": "MeridianState",
   "type": "object"
 }

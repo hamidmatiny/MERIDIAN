@@ -12,7 +12,7 @@ The system will be a LangGraph state machine with a fixed node sequence:
 
 Sentinel → Triage → RootCause → Fix → Critic → Verifier → SlackApproval → Postmortem
 
-Two loops are part of the graph, and both have hard caps stored on `MeridianState`.
+Two loops are part of the graph, and both have hard caps stored on each `IncidentCase`.
 
 `critic_rounds` counts completed Fix/Critic exchanges. AGENTS.md caps that loop at 3 rounds, so the counter allows 0 through 3. Zero means the critic has not run. `Verdict.round` is a different field: the 1-based round stamped on one verdict, also limited to 1 through 3. The state does not require `verdict.round == critic_rounds`. Each value is checked against its own limit.
 

@@ -1,7 +1,7 @@
 """Environment-backed settings.
 
 Importing this module never requires API keys. A caller that needs a provider
-or Slack asks explicitly with ``require_llm`` or ``require_slack``.
+or Slack asks explicitly with ``require_anthropic``, ``require_xai``, or ``require_slack``.
 """
 
 from typing import Self
@@ -110,18 +110,16 @@ class Settings(BaseSettings):
         """Treat blank strings as unset so a placeholder cannot look configured."""
         return _blank_to_none(value)
 
-    def require_llm(self) -> Self:
-        """Return self when both model-provider keys are set; otherwise raise."""
-        missing = [
-            name
-            for name, present in (
-                ("ANTHROPIC_API_KEY", _secret_present(self.anthropic_api_key)),
-                ("XAI_API_KEY", _secret_present(self.xai_api_key)),
-            )
-            if not present
-        ]
-        if missing:
-            raise MeridianConfigError("LLM", missing)
+    def require_anthropic(self) -> Self:
+        """Return self when the Anthropic key is set; otherwise raise."""
+        if not _secret_present(self.anthropic_api_key):
+            raise MeridianConfigError("Anthropic", ["ANTHROPIC_API_KEY"])
+        return self
+
+    def require_xai(self) -> Self:
+        """Return self when the xAI key is set; otherwise raise."""
+        if not _secret_present(self.xai_api_key):
+            raise MeridianConfigError("xAI", ["XAI_API_KEY"])
         return self
 
     def require_slack(self) -> Self:
