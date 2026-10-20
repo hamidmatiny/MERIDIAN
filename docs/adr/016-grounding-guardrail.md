@@ -23,6 +23,7 @@ If structured output does not parse, or the tool budget ends before a valid draf
 ## Consequences
 
 - A hallucinated ref cannot survive into the case. The score then sees a missing cause instead of a fabricated one.
+- The CLI fake cites the newest event on the incident's dataset, using only `id`, `ts`, and `dataset` from tool JSON. It does not read the causal-event marker, an injected-fault label, or the log file. Scripted models under `tests/` may still key off that marker.
 - The guardrail can only check refs the tools actually stamped. A true statement with no ref is dropped.
 - Lowering confidence is fixed arithmetic, so two runs with the same tool output and the same draft get the same violations.
 

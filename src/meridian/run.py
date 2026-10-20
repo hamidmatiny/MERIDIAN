@@ -1,7 +1,6 @@
 """Run Sentinel → Triage → RootCause on one injected partition."""
 
 import argparse
-import asyncio
 import sys
 import tempfile
 from datetime import date
@@ -9,11 +8,10 @@ from pathlib import Path
 from uuid import uuid4
 
 import numpy as np
-from langchain_core.tools import BaseTool
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 from meridian.agents.fake_llm import FakeTriageModel
-from meridian.agents.fake_root_cause import FakeRootCauseModel
+from meridian.agents.fake_root_cause import HeuristicRootCauseModel
 from meridian.agents.live_llm import build_live_chat
 from meridian.agents.root_cause import ToolChat
 from meridian.agents.triage import StructuredChat
@@ -25,7 +23,7 @@ from meridian.contracts.state import MeridianState
 from meridian.graph.build import build_graph
 from meridian.injector.events import build_events, require_causal_event, write_events
 from meridian.injector.faults import INJECTORS
-from meridian.mcp_servers.client import load_stdio_tools
+from meridian.mcp_servers.client import StdioSession
 from meridian.pipeline.catalog import DATASETS, DEFAULT_ROWS
 from meridian.pipeline.generate import DEFAULT_PARTITION_DATE, generate_dataset
 from meridian.pipeline.parquet import write_parquet
@@ -80,7 +78,7 @@ def _chat(
 ) -> tuple[StructuredChat, str, ToolChat, str]:
     if not live:
         triage = FakeTriageModel()
-        root = FakeRootCauseModel(mode="grounded")
+        root = HeuristicRootCauseModel()
         return triage, triage.model_name, root, root.model_name
     settings.require_anthropic()
     if settings.triage_model is None or settings.triage_model.strip() == "":
@@ -171,11 +169,10 @@ def _invoke(
 ) -> MeridianState:
     checkpoint = Path(settings.checkpoint_path)
     checkpoint.parent.mkdir(parents=True, exist_ok=True)
-
-    def _load_tools() -> list[BaseTool]:
-        return asyncio.run(load_stdio_tools(evidence_root))
-
-    with SqliteSaver.from_conn_string(str(checkpoint)) as saver:
+    with (
+        StdioSession(evidence_root) as session,
+        SqliteSaver.from_conn_string(str(checkpoint)) as saver,
+    ):
         graph = build_graph(
             num_cpus=settings.ray_num_cpus,
             model_name=model_name,
@@ -184,7 +181,7 @@ def _invoke(
             root_model_name=root_model_name,
             root_chat=root_chat,
             evidence_root=evidence_root,
-            tool_loader=_load_tools,
+            tools=session.tools,
             max_tool_calls=settings.rootcause_max_tool_calls,
         )
         run_id = uuid4()

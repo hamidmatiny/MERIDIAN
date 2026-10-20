@@ -1,6 +1,9 @@
-"""Committed JSON Schemas must match a fresh export, including untracked files."""
+"""Committed JSON Schemas must match a fresh export, including extra files.
 
-import subprocess
+The git porcelain gate stays in CI and in the acceptance command. This test
+compares file contents and does not invoke git.
+"""
+
 from pathlib import Path
 
 from meridian.schema_export import CONTRACT_SCHEMAS, export_schemas
@@ -33,13 +36,6 @@ def test_export_is_stable_and_drops_stale_files(tmp_path: Path) -> None:
     assert _texts(tmp_path) == first
 
 
-def test_schema_tree_has_no_untracked_or_modified_files() -> None:
-    export_schemas(COMMITTED)
-    status = subprocess.run(
-        ["git", "status", "--porcelain", "schemas/"],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    assert status.stdout == ""
+def test_committed_schemas_match_a_fresh_export(tmp_path: Path) -> None:
+    exported = _texts(export_schemas(tmp_path)[0].parent)
+    assert exported == _texts(COMMITTED)

@@ -23,13 +23,14 @@ Tools:
 | history | `list_events` | `events:<dataset>` and `event:<id>` on each event |
 | history | `get_event` | `event:<id>` |
 
-Each tool returns a Pydantic model. FastMCP serializes it to JSON. A non-finite PSI is stored as null. The CLI loads the servers with stdio and `MultiServerMCPClient`. Tests call the same FastMCP servers in-process, because the adapter has no in-process transport. Stdio tools are async-only, so `invoke_tool` falls back to `ainvoke` and keeps the JSON text.
+Each tool returns a Pydantic model. FastMCP serializes it to JSON. A non-finite PSI is stored as null. The CLI opens one `MultiServerMCPClient` session per server for the graph run, loads tools with `load_mcp_tools(session)`, and passes that list into every root-cause branch. The sessions stay on one event-loop thread and close when the run exits, including when the graph raises. `get_tools()` is not used: that path creates a new session, and a new process, for every call. Tests call the same FastMCP servers in-process, because the adapter has no in-process transport. A stdio tool is wrapped so the agent calls it synchronously on the shared session.
 
 `MERIDIAN_EVIDENCE_ROOT` points the data and history servers at `events.jsonl` and `incidents/<id>.json`. The root-cause node writes the incident file before the loop so `sample_failures` can read it.
 
 ## Consequences
 
 - A tool cannot write the log, the partition, or the incident. Tests hash the evidence directory before and after the calls.
+- One stdio process per server stays up for the run. A second tool call does not spawn another process.
 - The MCP major pin is deliberate. Moving to MCP 2 requires an adapter that imports the renamed server types.
 - Every citation the model is allowed to make has to be one of these refs. ADR-016 enforces that.
 

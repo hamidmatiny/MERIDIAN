@@ -4,11 +4,11 @@ from pathlib import Path
 from uuid import uuid4
 
 from langgraph.checkpoint.sqlite import SqliteSaver
+from tests.agents.scripted_root_cause import FakeRootCauseModel
 from tests.agents.support import DETECTED_AT, write_partition
 
 import meridian.graph.build as build_mod
 from meridian.agents.fake_llm import FakeTriageModel
-from meridian.agents.fake_root_cause import FakeRootCauseModel
 from meridian.contracts.fault_type import FaultType
 from meridian.contracts.state import MeridianState
 from meridian.graph.build import build_graph

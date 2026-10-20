@@ -2,7 +2,10 @@
 
 import hashlib
 import json
+import os
+import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import UUID
 
 import pandas as pd
@@ -23,7 +26,13 @@ from meridian.contracts.tool_results import (
     ReferenceComparison,
 )
 from meridian.injector.events import build_events, write_events
-from meridian.mcp_servers.client import _tool_text, inprocess_tools, stdio_connections
+from meridian.mcp_servers.client import (
+    StdioSession,
+    _tool_text,
+    inprocess_tools,
+    invoke_tool,
+    stdio_connections,
+)
 from meridian.mcp_servers.data import main as data_main
 from meridian.mcp_servers.history import main as history_main
 from meridian.mcp_servers.impl import (
@@ -244,11 +253,84 @@ def test_stdio_connection_map_and_payload_shapes(tmp_path: Path) -> None:
         text = '{"ref": "contract:vehicle_telemetry"}'
 
     assert json.loads(_tool_text(([_Block()], None)))["ref"].startswith("contract:")
+
+    structured = SimpleNamespace(structuredContent={"ref": "event:abc"})
+    text_only = SimpleNamespace(
+        structuredContent=None,
+        content=[SimpleNamespace(text='{"ref": "event:def"}')],
+    )
+    assert json.loads(_tool_text(structured))["ref"] == "event:abc"
+    assert json.loads(_tool_text(text_only))["ref"] == "event:def"
+    listed = [{"text": '{"ref": "event:list"}'}, {"text": "not-json"}]
+    assert json.loads(_tool_text(listed))["ref"] == "event:list"
+    assert json.loads(_tool_text(('{"ref": "event:str"}', None)))["ref"] == "event:str"
+    second = SimpleNamespace(structured_content={"ref": "event:attr"})
+    assert json.loads(_tool_text((["nope"], second)))["ref"] == "event:attr"
     with pytest.raises(TypeError, match="typed payload"):
         _tool_text(object())
+    with pytest.raises(TypeError, match="typed payload"):
+        _tool_text([{"text": "not-json"}])
 
 
-def test_stdio_list_events_round_trip(tmp_path: Path) -> None:
+def test_invoke_tool_falls_back_to_ainvoke() -> None:
+    class _AsyncOnly:
+        def invoke(self, args: dict[str, object]) -> str:
+            del args
+            raise NotImplementedError
+
+        async def ainvoke(self, args: dict[str, object]) -> str:
+            del args
+            return '{"ref": "event:async"}'
+
+    assert invoke_tool(_AsyncOnly(), {}) == '{"ref": "event:async"}'  # type: ignore[arg-type]
+
+
+def test_close_before_start_does_nothing(tmp_path: Path) -> None:
+    StdioSession(tmp_path).close()
+
+
+def test_session_queue_records_a_tool_error() -> None:
+    import asyncio
+    import concurrent.futures
+
+    from meridian.mcp_servers.client import _drain
+
+    async def _scenario() -> concurrent.futures.Future[object]:
+        queue: asyncio.Queue[object] = asyncio.Queue()
+        failed: concurrent.futures.Future[object] = concurrent.futures.Future()
+        skipped: concurrent.futures.Future[object] = concurrent.futures.Future()
+        skipped.set_result("already")
+
+        def _boom() -> object:
+            async def _raise() -> object:
+                raise RuntimeError("tool failed")
+
+            return _raise()
+
+        await queue.put((_boom, skipped))
+        await queue.put((_boom, failed))
+        await queue.put(None)
+        await _drain(queue)  # type: ignore[arg-type]
+        return failed
+
+    failed = asyncio.run(_scenario())
+    with pytest.raises(RuntimeError, match="tool failed"):
+        failed.result()
+
+
+def _child_pids() -> set[int]:
+    result = subprocess.run(
+        ["pgrep", "-P", str(os.getpid())],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return set()
+    return {int(line) for line in result.stdout.split() if line}
+
+
+def test_stdio_session_reuses_one_process_per_server(tmp_path: Path) -> None:
     events, _causal = build_events(
         dataset="fleet_daily_kpi",
         seed=5,
@@ -256,15 +338,47 @@ def test_stdio_list_events_round_trip(tmp_path: Path) -> None:
         columns=[],
     )
     write_events(tmp_path / "events.jsonl", events)
-    import asyncio
+    before = _child_pids()
+    with StdioSession(tmp_path) as session:
+        spawned = _child_pids() - before
+        assert len(spawned) == 3
+        tools = {tool.name: tool for tool in session.tools}
+        payload = invoke_tool(tools["list_events"], {"dataset": "fleet_daily_kpi"})
+        assert _child_pids() - before == spawned
+        page = EventPage.model_validate_json(payload)
+        assert page.ref == "events:fleet_daily_kpi"
+        assert page.events
+        assert all(event.dataset == "fleet_daily_kpi" for event in page.events)
+        event_id = str(page.events[0].id)
+        one = EventView.model_validate_json(invoke_tool(tools["get_event"], {"event_id": event_id}))
+        assert one.ref == f"event:{event_id}"
+        assert _child_pids() - before == spawned
+    assert _child_pids() == before
+    with pytest.raises(RuntimeError, match="closed"):
+        invoke_tool(tools["list_events"], {"dataset": "fleet_daily_kpi"})
 
-    from meridian.mcp_servers.client import invoke_tool, load_stdio_tools
 
-    tools = asyncio.run(load_stdio_tools(tmp_path))
-    listed = {tool.name: tool for tool in tools}
-    payload = invoke_tool(listed["list_events"], {"dataset": "fleet_daily_kpi"})
-    page = EventPage.model_validate_json(payload)
-    assert page.ref == "events:fleet_daily_kpi"
-    assert page.events
-    assert all(event.dataset == "fleet_daily_kpi" for event in page.events)
-    assert all(event.ref.startswith("event:") for event in page.events)
+def test_stdio_session_open_failure_closes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def _bad(root: Path) -> dict[str, object]:
+        del root
+        return {
+            "lineage": {
+                "transport": "stdio",
+                "command": "meridian-not-a-binary",
+                "args": [],
+                "env": {},
+            }
+        }
+
+    monkeypatch.setattr("meridian.mcp_servers.client.stdio_connections", _bad)
+    before = _child_pids()
+    try:
+        with StdioSession(tmp_path) as session:
+            raise AssertionError(f"session opened with {len(session.tools)} tools")
+    except AssertionError:
+        raise
+    except BaseException:
+        pass
+    else:
+        raise AssertionError("expected the session to fail while opening")
+    assert _child_pids() == before

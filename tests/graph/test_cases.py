@@ -6,10 +6,10 @@ from uuid import uuid4
 
 import pytest
 from langgraph.checkpoint.sqlite import SqliteSaver
+from tests.agents.scripted_root_cause import FakeRootCauseModel
 from tests.agents.support import DETECTED_AT
 
 from meridian.agents.fake_llm import FakeTriageModel
-from meridian.agents.fake_root_cause import FakeRootCauseModel
 from meridian.agents.severity_rules import floor_for
 from meridian.agents.triage import run_triage
 from meridian.contracts.fault_type import FaultType

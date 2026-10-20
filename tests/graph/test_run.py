@@ -44,6 +44,50 @@ def test_fake_schema_drift_run_prints_state(tmp_path: Path, monkeypatch, capsys)
     assert drift.triage.llm_severity.value == "SEV4"
 
 
+def test_cli_fake_runs_after_the_label_file_is_deleted(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    from meridian.run import _prepare
+
+    def wrapped(root: Path, **kwargs: object) -> object:
+        ref = _prepare(root, **kwargs)
+        label = root / "injected_fault.json"
+        label.write_text(
+            '{"causal_event_id":"00000000-0000-4000-8000-000000000099"}',
+            encoding="utf-8",
+        )
+        label.unlink()
+        assert not label.exists()
+        return ref
+
+    monkeypatch.setattr("meridian.run._prepare", wrapped)
+    code = main(
+        [
+            "--dataset",
+            "vehicle_telemetry",
+            "--fault",
+            "SCHEMA_DRIFT",
+            "--intensity",
+            "0.3",
+            "--seed",
+            "42",
+            "--rows",
+            "40",
+            "--fake-llm",
+        ]
+    )
+    assert code == 0
+    state = MeridianState.model_validate_json(capsys.readouterr().out)
+    assert state.cases
+    for case in state.cases.values():
+        assert case.hypothesis is not None
+        assert case.hypothesis.grounding_violations == 0
+        assert case.hypothesis.causal_event_id is not None
+
+
 def test_zero_intensity_skips_injection_and_triage(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.chdir(tmp_path)
     code = main(

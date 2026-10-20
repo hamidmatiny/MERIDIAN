@@ -7,9 +7,9 @@ from uuid import uuid4
 import pytest
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel
+from tests.agents.scripted_root_cause import FakeRootCauseModel
 from tests.agents.support import DETECTED_AT
 
-from meridian.agents.fake_root_cause import FakeRootCauseModel
 from meridian.agents.root_cause import run_root_cause
 from meridian.bench.score_root_cause import score
 from meridian.contracts.fault_type import FaultType
