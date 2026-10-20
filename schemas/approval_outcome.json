@@ -1,0 +1,10 @@
+{
+  "description": "The decision recorded from the human approval gate.",
+  "enum": [
+    "APPROVED",
+    "REJECTED",
+    "TIMEOUT"
+  ],
+  "title": "ApprovalOutcome",
+  "type": "string"
+}

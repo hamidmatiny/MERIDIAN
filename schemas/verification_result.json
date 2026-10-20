@@ -1,0 +1,44 @@
+{
+  "additionalProperties": false,
+  "description": "Pass/fail from a data replay. No model judgment belongs in this record.",
+  "properties": {
+    "duration_ms": {
+      "description": "Wall-clock duration of the replay, in milliseconds.",
+      "minimum": 0,
+      "title": "Duration Ms",
+      "type": "integer"
+    },
+    "failures_remaining": {
+      "description": "Contract failures still present after the patch.",
+      "minimum": 0,
+      "title": "Failures Remaining",
+      "type": "integer"
+    },
+    "passed": {
+      "description": "True only when no contract failures remain.",
+      "title": "Passed",
+      "type": "boolean"
+    },
+    "patch_id": {
+      "description": "Patch that was replayed.",
+      "format": "uuid",
+      "title": "Patch Id",
+      "type": "string"
+    },
+    "rows_checked": {
+      "description": "Number of rows the verifier replayed.",
+      "minimum": 0,
+      "title": "Rows Checked",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "patch_id",
+    "passed",
+    "rows_checked",
+    "failures_remaining",
+    "duration_ms"
+  ],
+  "title": "VerificationResult",
+  "type": "object"
+}

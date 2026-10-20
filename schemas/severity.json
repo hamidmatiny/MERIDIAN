@@ -1,0 +1,11 @@
+{
+  "description": "How urgently an incident must be handled. SEV1 is the most severe.",
+  "enum": [
+    "SEV1",
+    "SEV2",
+    "SEV3",
+    "SEV4"
+  ],
+  "title": "Severity",
+  "type": "string"
+}

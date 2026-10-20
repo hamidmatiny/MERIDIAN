@@ -1,0 +1,53 @@
+{
+  "$defs": {
+    "ApprovalOutcome": {
+      "description": "The decision recorded from the human approval gate.",
+      "enum": [
+        "APPROVED",
+        "REJECTED",
+        "TIMEOUT"
+      ],
+      "title": "ApprovalOutcome",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The human decision on whether a verified patch may merge.",
+  "properties": {
+    "approver": {
+      "description": "Identity that decided, such as a Slack user id.",
+      "title": "Approver",
+      "type": "string"
+    },
+    "comment": {
+      "description": "Human comment. Empty when none was given.",
+      "title": "Comment",
+      "type": "string"
+    },
+    "decided_at": {
+      "description": "UTC time of the decision.",
+      "format": "date-time",
+      "title": "Decided At",
+      "type": "string"
+    },
+    "decision": {
+      "$ref": "#/$defs/ApprovalOutcome",
+      "description": "APPROVED, REJECTED, or TIMEOUT."
+    },
+    "patch_id": {
+      "description": "Patch the human decided on.",
+      "format": "uuid",
+      "title": "Patch Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "patch_id",
+    "decision",
+    "approver",
+    "decided_at",
+    "comment"
+  ],
+  "title": "ApprovalDecision",
+  "type": "object"
+}

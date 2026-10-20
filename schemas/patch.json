@@ -1,0 +1,59 @@
+{
+  "additionalProperties": false,
+  "description": "A code change proposed for one hypothesis.\n\n``id`` is the value later verdicts, verification, and approval must match.",
+  "properties": {
+    "author_model": {
+      "description": "Model that authored the patch.",
+      "title": "Author Model",
+      "type": "string"
+    },
+    "diff": {
+      "description": "Unified diff of the proposed change.",
+      "title": "Diff",
+      "type": "string"
+    },
+    "files_touched": {
+      "description": "Repo-relative paths the diff changes.",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Files Touched",
+      "type": "array"
+    },
+    "hypothesis_id": {
+      "description": "Hypothesis this patch implements.",
+      "format": "uuid",
+      "title": "Hypothesis Id",
+      "type": "string"
+    },
+    "id": {
+      "description": "Stable identifier for this patch.",
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "incident_id": {
+      "description": "Incident this patch is meant to resolve.",
+      "format": "uuid",
+      "title": "Incident Id",
+      "type": "string"
+    },
+    "regression_test": {
+      "description": "Source of the generated regression test.",
+      "title": "Regression Test",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "incident_id",
+    "hypothesis_id",
+    "diff",
+    "regression_test",
+    "files_touched",
+    "author_model"
+  ],
+  "title": "Patch",
+  "type": "object"
+}

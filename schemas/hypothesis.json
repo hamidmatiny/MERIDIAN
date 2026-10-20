@@ -1,0 +1,76 @@
+{
+  "$defs": {
+    "Evidence": {
+      "additionalProperties": false,
+      "description": "One citation supporting a root-cause hypothesis.",
+      "properties": {
+        "excerpt": {
+          "description": "Short quoted excerpt. Empty when the reference stands alone.",
+          "title": "Excerpt",
+          "type": "string"
+        },
+        "reference": {
+          "description": "Locator for the evidence, such as a path, URL, or commit.",
+          "title": "Reference",
+          "type": "string"
+        },
+        "source": {
+          "description": "System the evidence came from, such as logs or git.",
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "reference",
+        "excerpt"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A proposed root cause for one incident.\n\n``id`` is the value ``Patch.hypothesis_id`` must match.",
+  "properties": {
+    "confidence": {
+      "description": "Confidence in this hypothesis, from 0.0 through 1.0.",
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "evidence": {
+      "description": "Evidence items that support the summary.",
+      "items": {
+        "$ref": "#/$defs/Evidence"
+      },
+      "title": "Evidence",
+      "type": "array"
+    },
+    "id": {
+      "description": "Stable identifier. Patches reference this value.",
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "incident_id": {
+      "description": "Incident this hypothesis explains.",
+      "format": "uuid",
+      "title": "Incident Id",
+      "type": "string"
+    },
+    "root_cause_summary": {
+      "description": "Plain-language root cause.",
+      "title": "Root Cause Summary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "incident_id",
+    "root_cause_summary",
+    "confidence"
+  ],
+  "title": "Hypothesis",
+  "type": "object"
+}

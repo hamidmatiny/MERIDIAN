@@ -1,0 +1,29 @@
+{
+  "additionalProperties": false,
+  "description": "One entry in an incident timeline.",
+  "properties": {
+    "actor": {
+      "description": "Agent, human, or system that caused the event.",
+      "title": "Actor",
+      "type": "string"
+    },
+    "occurred_at": {
+      "description": "UTC time the event happened.",
+      "format": "date-time",
+      "title": "Occurred At",
+      "type": "string"
+    },
+    "summary": {
+      "description": "What happened.",
+      "title": "Summary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "occurred_at",
+    "actor",
+    "summary"
+  ],
+  "title": "TimelineEvent",
+  "type": "object"
+}

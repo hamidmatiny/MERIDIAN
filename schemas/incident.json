@@ -1,0 +1,131 @@
+{
+  "$defs": {
+    "FaultType": {
+      "description": "The kind of contract failure detected on a partition.",
+      "enum": [
+        "SCHEMA_DRIFT",
+        "NULL_EXPLOSION",
+        "UNIT_MISMATCH",
+        "DUPLICATE_KEYS",
+        "LATE_PARTITION",
+        "DISTRIBUTION_SHIFT"
+      ],
+      "title": "FaultType",
+      "type": "string"
+    },
+    "Severity": {
+      "description": "How urgently an incident must be handled. SEV1 is the most severe.",
+      "enum": [
+        "SEV1",
+        "SEV2",
+        "SEV3",
+        "SEV4"
+      ],
+      "title": "Severity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A data-quality failure on one dataset partition.\n\n``severity`` stays unset until triage. ``sample_failure_rows`` holds at most\n50 scalar rows.",
+  "properties": {
+    "blast_radius": {
+      "description": "Downstream datasets affected by this incident.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Blast Radius",
+      "type": "array"
+    },
+    "contract_name": {
+      "description": "Name of the data contract that reported the failure.",
+      "title": "Contract Name",
+      "type": "string"
+    },
+    "dataset": {
+      "description": "Dataset the failing partition belongs to.",
+      "title": "Dataset",
+      "type": "string"
+    },
+    "detected_at": {
+      "description": "UTC time when the failure was detected.",
+      "format": "date-time",
+      "title": "Detected At",
+      "type": "string"
+    },
+    "failing_checks": {
+      "description": "Names of the contract checks that failed.",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Failing Checks",
+      "type": "array"
+    },
+    "fault_type": {
+      "$ref": "#/$defs/FaultType",
+      "description": "Class of data-quality fault."
+    },
+    "id": {
+      "description": "Stable identifier for this incident.",
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "partition": {
+      "description": "Partition key or path that failed.",
+      "title": "Partition",
+      "type": "string"
+    },
+    "sample_failure_rows": {
+      "description": "Up to 50 sampled rows that failed the contract. Values are scalars.",
+      "items": {
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "type": "object"
+      },
+      "maxItems": 50,
+      "title": "Sample Failure Rows",
+      "type": "array"
+    },
+    "severity": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Severity"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Triage severity. Unset until Triage runs."
+    }
+  },
+  "required": [
+    "id",
+    "detected_at",
+    "dataset",
+    "partition",
+    "contract_name",
+    "fault_type",
+    "failing_checks"
+  ],
+  "title": "Incident",
+  "type": "object"
+}

@@ -1,0 +1,28 @@
+{
+  "additionalProperties": false,
+  "description": "One citation supporting a root-cause hypothesis.",
+  "properties": {
+    "excerpt": {
+      "description": "Short quoted excerpt. Empty when the reference stands alone.",
+      "title": "Excerpt",
+      "type": "string"
+    },
+    "reference": {
+      "description": "Locator for the evidence, such as a path, URL, or commit.",
+      "title": "Reference",
+      "type": "string"
+    },
+    "source": {
+      "description": "System the evidence came from, such as logs or git.",
+      "title": "Source",
+      "type": "string"
+    }
+  },
+  "required": [
+    "source",
+    "reference",
+    "excerpt"
+  ],
+  "title": "Evidence",
+  "type": "object"
+}

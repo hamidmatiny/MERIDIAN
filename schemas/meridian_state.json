@@ -1,0 +1,592 @@
+{
+  "$defs": {
+    "ApprovalDecision": {
+      "additionalProperties": false,
+      "description": "The human decision on whether a verified patch may merge.",
+      "properties": {
+        "approver": {
+          "description": "Identity that decided, such as a Slack user id.",
+          "title": "Approver",
+          "type": "string"
+        },
+        "comment": {
+          "description": "Human comment. Empty when none was given.",
+          "title": "Comment",
+          "type": "string"
+        },
+        "decided_at": {
+          "description": "UTC time of the decision.",
+          "format": "date-time",
+          "title": "Decided At",
+          "type": "string"
+        },
+        "decision": {
+          "$ref": "#/$defs/ApprovalOutcome",
+          "description": "APPROVED, REJECTED, or TIMEOUT."
+        },
+        "patch_id": {
+          "description": "Patch the human decided on.",
+          "format": "uuid",
+          "title": "Patch Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "patch_id",
+        "decision",
+        "approver",
+        "decided_at",
+        "comment"
+      ],
+      "title": "ApprovalDecision",
+      "type": "object"
+    },
+    "ApprovalOutcome": {
+      "description": "The decision recorded from the human approval gate.",
+      "enum": [
+        "APPROVED",
+        "REJECTED",
+        "TIMEOUT"
+      ],
+      "title": "ApprovalOutcome",
+      "type": "string"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "description": "One citation supporting a root-cause hypothesis.",
+      "properties": {
+        "excerpt": {
+          "description": "Short quoted excerpt. Empty when the reference stands alone.",
+          "title": "Excerpt",
+          "type": "string"
+        },
+        "reference": {
+          "description": "Locator for the evidence, such as a path, URL, or commit.",
+          "title": "Reference",
+          "type": "string"
+        },
+        "source": {
+          "description": "System the evidence came from, such as logs or git.",
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "reference",
+        "excerpt"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "FaultType": {
+      "description": "The kind of contract failure detected on a partition.",
+      "enum": [
+        "SCHEMA_DRIFT",
+        "NULL_EXPLOSION",
+        "UNIT_MISMATCH",
+        "DUPLICATE_KEYS",
+        "LATE_PARTITION",
+        "DISTRIBUTION_SHIFT"
+      ],
+      "title": "FaultType",
+      "type": "string"
+    },
+    "Hypothesis": {
+      "additionalProperties": false,
+      "description": "A proposed root cause for one incident.\n\n``id`` is the value ``Patch.hypothesis_id`` must match.",
+      "properties": {
+        "confidence": {
+          "description": "Confidence in this hypothesis, from 0.0 through 1.0.",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "evidence": {
+          "description": "Evidence items that support the summary.",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "id": {
+          "description": "Stable identifier. Patches reference this value.",
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "incident_id": {
+          "description": "Incident this hypothesis explains.",
+          "format": "uuid",
+          "title": "Incident Id",
+          "type": "string"
+        },
+        "root_cause_summary": {
+          "description": "Plain-language root cause.",
+          "title": "Root Cause Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "incident_id",
+        "root_cause_summary",
+        "confidence"
+      ],
+      "title": "Hypothesis",
+      "type": "object"
+    },
+    "Incident": {
+      "additionalProperties": false,
+      "description": "A data-quality failure on one dataset partition.\n\n``severity`` stays unset until triage. ``sample_failure_rows`` holds at most\n50 scalar rows.",
+      "properties": {
+        "blast_radius": {
+          "description": "Downstream datasets affected by this incident.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Blast Radius",
+          "type": "array"
+        },
+        "contract_name": {
+          "description": "Name of the data contract that reported the failure.",
+          "title": "Contract Name",
+          "type": "string"
+        },
+        "dataset": {
+          "description": "Dataset the failing partition belongs to.",
+          "title": "Dataset",
+          "type": "string"
+        },
+        "detected_at": {
+          "description": "UTC time when the failure was detected.",
+          "format": "date-time",
+          "title": "Detected At",
+          "type": "string"
+        },
+        "failing_checks": {
+          "description": "Names of the contract checks that failed.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Failing Checks",
+          "type": "array"
+        },
+        "fault_type": {
+          "$ref": "#/$defs/FaultType",
+          "description": "Class of data-quality fault."
+        },
+        "id": {
+          "description": "Stable identifier for this incident.",
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "partition": {
+          "description": "Partition key or path that failed.",
+          "title": "Partition",
+          "type": "string"
+        },
+        "sample_failure_rows": {
+          "description": "Up to 50 sampled rows that failed the contract. Values are scalars.",
+          "items": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object"
+          },
+          "maxItems": 50,
+          "title": "Sample Failure Rows",
+          "type": "array"
+        },
+        "severity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Severity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Triage severity. Unset until Triage runs."
+        }
+      },
+      "required": [
+        "id",
+        "detected_at",
+        "dataset",
+        "partition",
+        "contract_name",
+        "fault_type",
+        "failing_checks"
+      ],
+      "title": "Incident",
+      "type": "object"
+    },
+    "Patch": {
+      "additionalProperties": false,
+      "description": "A code change proposed for one hypothesis.\n\n``id`` is the value later verdicts, verification, and approval must match.",
+      "properties": {
+        "author_model": {
+          "description": "Model that authored the patch.",
+          "title": "Author Model",
+          "type": "string"
+        },
+        "diff": {
+          "description": "Unified diff of the proposed change.",
+          "title": "Diff",
+          "type": "string"
+        },
+        "files_touched": {
+          "description": "Repo-relative paths the diff changes.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Files Touched",
+          "type": "array"
+        },
+        "hypothesis_id": {
+          "description": "Hypothesis this patch implements.",
+          "format": "uuid",
+          "title": "Hypothesis Id",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable identifier for this patch.",
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "incident_id": {
+          "description": "Incident this patch is meant to resolve.",
+          "format": "uuid",
+          "title": "Incident Id",
+          "type": "string"
+        },
+        "regression_test": {
+          "description": "Source of the generated regression test.",
+          "title": "Regression Test",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "incident_id",
+        "hypothesis_id",
+        "diff",
+        "regression_test",
+        "files_touched",
+        "author_model"
+      ],
+      "title": "Patch",
+      "type": "object"
+    },
+    "Postmortem": {
+      "additionalProperties": false,
+      "description": "Incident report. The timeline is ordered by ``occurred_at``.",
+      "properties": {
+        "cost_usd": {
+          "description": "Recorded cost in US dollars.",
+          "minimum": 0.0,
+          "title": "Cost Usd",
+          "type": "number"
+        },
+        "fix_summary": {
+          "description": "What the approved fix changed.",
+          "title": "Fix Summary",
+          "type": "string"
+        },
+        "incident_id": {
+          "description": "Incident this report describes.",
+          "format": "uuid",
+          "title": "Incident Id",
+          "type": "string"
+        },
+        "root_cause": {
+          "description": "Accepted root cause.",
+          "title": "Root Cause",
+          "type": "string"
+        },
+        "time_to_resolution_s": {
+          "description": "Whole seconds from detection to approval or escalation.",
+          "minimum": 0,
+          "title": "Time To Resolution S",
+          "type": "integer"
+        },
+        "timeline": {
+          "description": "Events in non-decreasing occurred_at order.",
+          "items": {
+            "$ref": "#/$defs/TimelineEvent"
+          },
+          "title": "Timeline",
+          "type": "array"
+        }
+      },
+      "required": [
+        "incident_id",
+        "root_cause",
+        "fix_summary",
+        "time_to_resolution_s",
+        "cost_usd"
+      ],
+      "title": "Postmortem",
+      "type": "object"
+    },
+    "Severity": {
+      "description": "How urgently an incident must be handled. SEV1 is the most severe.",
+      "enum": [
+        "SEV1",
+        "SEV2",
+        "SEV3",
+        "SEV4"
+      ],
+      "title": "Severity",
+      "type": "string"
+    },
+    "TimelineEvent": {
+      "additionalProperties": false,
+      "description": "One entry in an incident timeline.",
+      "properties": {
+        "actor": {
+          "description": "Agent, human, or system that caused the event.",
+          "title": "Actor",
+          "type": "string"
+        },
+        "occurred_at": {
+          "description": "UTC time the event happened.",
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "summary": {
+          "description": "What happened.",
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "occurred_at",
+        "actor",
+        "summary"
+      ],
+      "title": "TimelineEvent",
+      "type": "object"
+    },
+    "Verdict": {
+      "additionalProperties": false,
+      "description": "An independent reviewer's decision on one patch.\n\n``round`` is the Fix/Critic round and must be from 1 through 3.",
+      "properties": {
+        "approved": {
+          "description": "Whether the reviewer accepts the patch.",
+          "title": "Approved",
+          "type": "boolean"
+        },
+        "objections": {
+          "description": "Reasons the reviewer rejected the patch, if any.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Objections",
+          "type": "array"
+        },
+        "patch_id": {
+          "description": "Patch under review.",
+          "format": "uuid",
+          "title": "Patch Id",
+          "type": "string"
+        },
+        "reviewer_model": {
+          "description": "Model that produced this verdict.",
+          "title": "Reviewer Model",
+          "type": "string"
+        },
+        "round": {
+          "description": "Critic round, from 1 through 3.",
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Round",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "patch_id",
+        "reviewer_model",
+        "approved",
+        "round"
+      ],
+      "title": "Verdict",
+      "type": "object"
+    },
+    "VerificationResult": {
+      "additionalProperties": false,
+      "description": "Pass/fail from a data replay. No model judgment belongs in this record.",
+      "properties": {
+        "duration_ms": {
+          "description": "Wall-clock duration of the replay, in milliseconds.",
+          "minimum": 0,
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "failures_remaining": {
+          "description": "Contract failures still present after the patch.",
+          "minimum": 0,
+          "title": "Failures Remaining",
+          "type": "integer"
+        },
+        "passed": {
+          "description": "True only when no contract failures remain.",
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "patch_id": {
+          "description": "Patch that was replayed.",
+          "format": "uuid",
+          "title": "Patch Id",
+          "type": "string"
+        },
+        "rows_checked": {
+          "description": "Number of rows the verifier replayed.",
+          "minimum": 0,
+          "title": "Rows Checked",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "patch_id",
+        "passed",
+        "rows_checked",
+        "failures_remaining",
+        "duration_ms"
+      ],
+      "title": "VerificationResult",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Partial graph state. Later nodes fill fields; parent ids must agree when both exist.",
+  "properties": {
+    "approval": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ApprovalDecision"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Human approval decision, if the gate has completed."
+    },
+    "critic_rounds": {
+      "default": 0,
+      "description": "Completed Fix/Critic rounds so far. Maximum is 3.",
+      "maximum": 3,
+      "minimum": 0,
+      "title": "Critic Rounds",
+      "type": "integer"
+    },
+    "fix_attempts": {
+      "default": 0,
+      "description": "Fix executions so far. Maximum is 3 (initial attempt plus two retries).",
+      "maximum": 3,
+      "minimum": 0,
+      "title": "Fix Attempts",
+      "type": "integer"
+    },
+    "hypothesis": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Hypothesis"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Current root-cause hypothesis, if one has been proposed."
+    },
+    "incident": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Incident"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Incident under response, if detected."
+    },
+    "patch": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Patch"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Current patch, if Fix has produced one."
+    },
+    "postmortem": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Postmortem"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Incident report, if the loop has finished."
+    },
+    "verdict": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Verdict"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Latest critic verdict, if any."
+    },
+    "verification": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/VerificationResult"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Latest deterministic replay result, if any."
+    }
+  },
+  "title": "MeridianState",
+  "type": "object"
+}

@@ -1,0 +1,45 @@
+{
+  "additionalProperties": false,
+  "description": "An independent reviewer's decision on one patch.\n\n``round`` is the Fix/Critic round and must be from 1 through 3.",
+  "properties": {
+    "approved": {
+      "description": "Whether the reviewer accepts the patch.",
+      "title": "Approved",
+      "type": "boolean"
+    },
+    "objections": {
+      "description": "Reasons the reviewer rejected the patch, if any.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Objections",
+      "type": "array"
+    },
+    "patch_id": {
+      "description": "Patch under review.",
+      "format": "uuid",
+      "title": "Patch Id",
+      "type": "string"
+    },
+    "reviewer_model": {
+      "description": "Model that produced this verdict.",
+      "title": "Reviewer Model",
+      "type": "string"
+    },
+    "round": {
+      "description": "Critic round, from 1 through 3.",
+      "maximum": 3,
+      "minimum": 1,
+      "title": "Round",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "patch_id",
+    "reviewer_model",
+    "approved",
+    "round"
+  ],
+  "title": "Verdict",
+  "type": "object"
+}

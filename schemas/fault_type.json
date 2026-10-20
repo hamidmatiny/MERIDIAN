@@ -1,0 +1,13 @@
+{
+  "description": "The kind of contract failure detected on a partition.",
+  "enum": [
+    "SCHEMA_DRIFT",
+    "NULL_EXPLOSION",
+    "UNIT_MISMATCH",
+    "DUPLICATE_KEYS",
+    "LATE_PARTITION",
+    "DISTRIBUTION_SHIFT"
+  ],
+  "title": "FaultType",
+  "type": "string"
+}

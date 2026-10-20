@@ -1,0 +1,82 @@
+{
+  "$defs": {
+    "TimelineEvent": {
+      "additionalProperties": false,
+      "description": "One entry in an incident timeline.",
+      "properties": {
+        "actor": {
+          "description": "Agent, human, or system that caused the event.",
+          "title": "Actor",
+          "type": "string"
+        },
+        "occurred_at": {
+          "description": "UTC time the event happened.",
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "summary": {
+          "description": "What happened.",
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "occurred_at",
+        "actor",
+        "summary"
+      ],
+      "title": "TimelineEvent",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Incident report. The timeline is ordered by ``occurred_at``.",
+  "properties": {
+    "cost_usd": {
+      "description": "Recorded cost in US dollars.",
+      "minimum": 0.0,
+      "title": "Cost Usd",
+      "type": "number"
+    },
+    "fix_summary": {
+      "description": "What the approved fix changed.",
+      "title": "Fix Summary",
+      "type": "string"
+    },
+    "incident_id": {
+      "description": "Incident this report describes.",
+      "format": "uuid",
+      "title": "Incident Id",
+      "type": "string"
+    },
+    "root_cause": {
+      "description": "Accepted root cause.",
+      "title": "Root Cause",
+      "type": "string"
+    },
+    "time_to_resolution_s": {
+      "description": "Whole seconds from detection to approval or escalation.",
+      "minimum": 0,
+      "title": "Time To Resolution S",
+      "type": "integer"
+    },
+    "timeline": {
+      "description": "Events in non-decreasing occurred_at order.",
+      "items": {
+        "$ref": "#/$defs/TimelineEvent"
+      },
+      "title": "Timeline",
+      "type": "array"
+    }
+  },
+  "required": [
+    "incident_id",
+    "root_cause",
+    "fix_summary",
+    "time_to_resolution_s",
+    "cost_usd"
+  ],
+  "title": "Postmortem",
+  "type": "object"
+}
