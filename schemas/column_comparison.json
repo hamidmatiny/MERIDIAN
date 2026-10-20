@@ -1,0 +1,43 @@
+{
+  "additionalProperties": false,
+  "description": "PSI and null rate for one profiled column.",
+  "properties": {
+    "column": {
+      "description": "Column name.",
+      "title": "Column",
+      "type": "string"
+    },
+    "null_rate": {
+      "description": "Fraction of nulls in the partition.",
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Null Rate",
+      "type": "number"
+    },
+    "psi": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "PSI against the reference profile. Unset if not finite.",
+      "title": "Psi"
+    },
+    "ref": {
+      "description": "Stable ref, psi:<dataset>:<column>.",
+      "title": "Ref",
+      "type": "string"
+    }
+  },
+  "required": [
+    "column",
+    "psi",
+    "null_rate",
+    "ref"
+  ],
+  "title": "ColumnComparison",
+  "type": "object"
+}

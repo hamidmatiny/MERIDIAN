@@ -35,6 +35,9 @@ class InjectedFault(MeridianModel):
         ge=0,
         description="Seconds past the freshness deadline. Set only for a late partition.",
     )
+    causal_event_id: UUID = Field(
+        description="The one change event that caused this fault. It must be in events.jsonl.",
+    )
 
     @model_validator(mode="after")
     def late_partition_records_its_delay(self) -> Self:

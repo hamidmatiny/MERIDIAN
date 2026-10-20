@@ -1,0 +1,74 @@
+{
+  "$defs": {
+    "EventKind": {
+      "description": "Kind of change recorded in ``events.jsonl``.",
+      "enum": [
+        "SCHEMA_CHANGE",
+        "DEPLOY",
+        "CONFIG_CHANGE",
+        "UPSTREAM_DELAY",
+        "BACKFILL",
+        "DEPENDENCY_BUMP"
+      ],
+      "title": "EventKind",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One change event plus the ref an agent may cite.",
+  "properties": {
+    "author": {
+      "description": "Author recorded on the event.",
+      "title": "Author",
+      "type": "string"
+    },
+    "dataset": {
+      "description": "Dataset the event applies to.",
+      "title": "Dataset",
+      "type": "string"
+    },
+    "diff_excerpt": {
+      "description": "Diff excerpt.",
+      "title": "Diff Excerpt",
+      "type": "string"
+    },
+    "id": {
+      "description": "Event id.",
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/$defs/EventKind",
+      "description": "Event kind."
+    },
+    "ref": {
+      "description": "Stable ref, event:<id>.",
+      "title": "Ref",
+      "type": "string"
+    },
+    "summary": {
+      "description": "Event summary.",
+      "title": "Summary",
+      "type": "string"
+    },
+    "ts": {
+      "description": "UTC timestamp.",
+      "format": "date-time",
+      "title": "Ts",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "ts",
+    "kind",
+    "dataset",
+    "author",
+    "summary",
+    "diff_excerpt",
+    "ref"
+  ],
+  "title": "EventView",
+  "type": "object"
+}

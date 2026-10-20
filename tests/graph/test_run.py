@@ -147,15 +147,18 @@ def test_cli_rejects_intensity_and_seed_outside_range() -> None:
 
 def test_live_chat_uses_the_configured_model(monkeypatch) -> None:
     monkeypatch.setattr(Settings, "require_anthropic", lambda self: None)
-    monkeypatch.setattr("meridian.run.build_live_chat", lambda settings: "live-client")
+    monkeypatch.setattr("meridian.run.build_live_chat", lambda settings, **kwargs: "live-client")
     settings = Settings(
         _env_file=None,
         anthropic_api_key=SecretStr("test-key"),
         triage_model="configured-model",
+        rootcause_model="configured-root",
     )
-    chat, name = _chat(settings, live=True)
+    chat, name, root_chat, root_name = _chat(settings, live=True)
     assert chat == "live-client"
+    assert root_chat == "live-client"
     assert name == "configured-model"
+    assert root_name == "configured-root"
 
 
 def test_module_entrypoint_prints_help(monkeypatch) -> None:

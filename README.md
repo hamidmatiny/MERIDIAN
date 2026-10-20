@@ -2,11 +2,11 @@
 
 MERIDIAN is being built to detect data-quality failures, explain them, propose a fix, verify that fix against the failing data, and ask a human in Slack before anything merges. The path is a fixed LangGraph state machine. The goal is to shorten the time from incident to a verified, approved fix.
 
-This repository has the Phase 0 contracts, the Phase 1 data contracts and injector, and the Phase 2 Sentinel → Triage graph. Root cause, the fix loop, and the Slack gate are not built. Unit tests do not call a model, Ray's object store beyond the local Sentinel tasks, or Slack.
+This repository has the Phase 0 contracts, the Phase 1 data contracts and injector, and the Phase 2 Sentinel → Triage graph. Phase 3 adds a root-cause agent that cites MCP tools. The fix loop and the Slack gate are not built. Unit tests do not call a model, Ray's object store beyond the local Sentinel tasks, or Slack.
 
 ## Target agent graph
 
-Sentinel and Triage are implemented. The other nodes are planned.
+Sentinel, Triage, and RootCause are implemented. The other nodes are planned.
 
 ```mermaid
 flowchart TD
@@ -25,8 +25,8 @@ flowchart TD
 
   classDef built fill:#d9ead3,stroke:#38761d
   classDef planned fill:#f3f3f3,stroke:#999
-  class sentinel,triage built
-  class rootCause,fix,critic,verifier,slack,postmortem planned
+  class sentinel,triage,rootCause built
+  class fix,critic,verifier,slack,postmortem planned
 ```
 
 | Node | Planned role |
@@ -40,6 +40,23 @@ flowchart TD
 | SlackApproval | LangGraph interrupt. A human approves, rejects, or the request times out. |
 | Postmortem | Write the incident report. |
 
+## MCP tools
+
+Root cause may call these. Each response is a Pydantic model with a stable `ref`. The tools only read.
+
+| Tool | Returns | Ref |
+| --- | --- | --- |
+| `get_upstream` | Datasets that feed this one | `lineage:upstream:<dataset>` |
+| `get_downstream` | Datasets this one feeds | `lineage:downstream:<dataset>` |
+| `get_contract` | Pandera column names and named checks | `contract:<dataset>` |
+| `describe_partition` | Dtypes and null rates | `partition:<path>`, `column:<path>:<column>` |
+| `compare_to_reference` | PSI and null rate per profiled column | `psi:<dataset>`, `psi:<dataset>:<column>` |
+| `sample_failures` | Up to 20 stored sample rows | `sample:<incident_id>` |
+| `list_events` | Change events, with optional filters | `events:<dataset>`, `event:<id>` |
+| `get_event` | One change event | `event:<id>` |
+
+A citation survives only when that ref came back from a tool in the same case. `MERIDIAN_ROOTCAUSE_MAX_TOOL_CALLS` defaults to 8.
+
 Loop limits, already enforced on each `IncidentCase`: Fix and Critic stop after 3 rounds. A failed verification may send the work back to Fix at most twice (3 Fix executions total), then the run escalates to a human.
 
 ## Phases
@@ -48,8 +65,8 @@ Loop limits, already enforced on each `IncidentCase`: Fix and Critic stop after 
 | --- | --- | --- |
 | 0 | Repository, ADRs, Pydantic contracts, CI | done |
 | 1 | Pandera contracts and an incident injector | done |
-| 2 | Graph skeleton: Sentinel to Triage | in progress |
-| 3 | RootCause agent with MCP tools | planned |
+| 2 | Graph skeleton: Sentinel to Triage | done |
+| 3 | RootCause agent with MCP tools | in progress |
 | 4 | Fix, Critic, and Verifier loop on Ray | planned |
 | 5 | Slack approval gate and Postmortem | planned |
 | 6 | MERIDIAN-Bench harness and published results | planned |
@@ -57,17 +74,19 @@ Loop limits, already enforced on each `IncidentCase`: Fix and Critic stop after 
 
 ## What is in this tree
 
-- `src/meridian/contracts/` — frozen Pydantic models. A run is `MeridianState`: partitions, `llm_calls`, and one `IncidentCase` per incident.
+- `src/meridian/contracts/` — frozen Pydantic models. A run is `MeridianState`: partitions, `llm_calls`, `tool_calls`, and one `IncidentCase` per incident.
 - `src/meridian/pipeline/` — seeded generators for the three fleet datasets, plus `lineage.yaml`.
 - `src/meridian/quality/` — pandera models, PSI, the freshness SLA, and `evaluate`, which returns `Incident` records.
-- `src/meridian/agents/` — Sentinel on Ray, the severity floor, and Triage.
-- `src/meridian/graph/` — the Sentinel → Triage graph and the SQLite checkpointer wiring.
-- `src/meridian/prompts/triage.v1.md` — the versioned triage prompt.
-- `src/meridian/run.py` — `python -m meridian.run`. `--fake-llm` is the default. `--live` calls Claude.
-- `src/meridian/injector/` — one injector per fault type, and the `python -m meridian.injector` CLI.
-- `src/meridian/config.py` — settings loaded from the environment and `.env`. Missing keys do not crash import. `Settings.require_anthropic()`, `Settings.require_xai()`, and `Settings.require_slack()` raise when a caller actually needs those credentials. `--live` asks only for Anthropic.
+- `src/meridian/agents/` — Sentinel on Ray, the severity floor, Triage, and the bounded root-cause tool loop.
+- `src/meridian/mcp_servers/` — read-only lineage, data, and history tools.
+- `src/meridian/graph/` — Sentinel, then one triage branch and one root-cause branch per incident. The checkpointer is still SQLite.
+- `src/meridian/prompts/` — `triage.v1.md` and `root_cause.v1.md`.
+- `src/meridian/bench/score_root_cause.py` — scores one hypothesis against the injected fault. No accuracy is published from it.
+- `src/meridian/run.py` — `python -m meridian.run`. `--fake-llm` is the default. `--live` calls Claude for triage and root cause.
+- `src/meridian/injector/` — one injector per fault type, the seeded `events.jsonl` log, and the `python -m meridian.injector` CLI.
+- `src/meridian/config.py` — settings loaded from the environment and `.env`. Missing keys do not crash import. `Settings.require_anthropic()`, `Settings.require_xai()`, and `Settings.require_slack()` raise when a caller actually needs those credentials. `--live` asks for Anthropic plus `MERIDIAN_TRIAGE_MODEL` and `MERIDIAN_ROOTCAUSE_MODEL`.
 - `schemas/` — JSON Schema generated from the contracts.
-- `docs/adr/` — ADR-001 through ADR-013.
+- `docs/adr/` — ADR-001 through ADR-017.
 - `.github/workflows/ci.yml` — the checks below.
 
 Generated Parquet under `data/` is gitignored.

@@ -83,6 +83,17 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MERIDIAN_TRIAGE_MODEL"),
         description="Model name for triage. Required only for a live run.",
     )
+    rootcause_model: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MERIDIAN_ROOTCAUSE_MODEL"),
+        description="Model name for root cause. Required only for a live run.",
+    )
+    rootcause_max_tool_calls: int = Field(
+        default=8,
+        ge=1,
+        validation_alias=AliasChoices("MERIDIAN_ROOTCAUSE_MAX_TOOL_CALLS"),
+        description="Maximum tool calls the root-cause loop may make for one case.",
+    )
     ray_num_cpus: int = Field(
         default=2,
         ge=1,
@@ -103,6 +114,7 @@ class Settings(BaseSettings):
         "slack_approval_channel",
         "database_url",
         "triage_model",
+        "rootcause_model",
         mode="before",
     )
     @classmethod

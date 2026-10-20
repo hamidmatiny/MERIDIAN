@@ -18,6 +18,7 @@ def _label(**overrides: object) -> InjectedFault:
         "rows_affected": 10,
         "intensity": 0.1,
         "seed": 42,
+        "causal_event_id": UUID("6f9c0b3e-3c1a-4f5e-9a4b-8e2d1c0b7a12"),
     }
     payload.update(overrides)
     return InjectedFault.model_validate(payload)

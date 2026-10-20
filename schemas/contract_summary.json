@@ -1,0 +1,46 @@
+{
+  "additionalProperties": false,
+  "description": "Pandera column and check names for one dataset.",
+  "properties": {
+    "checks": {
+      "description": "Named dataframe checks, if any.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Checks",
+      "type": "array"
+    },
+    "columns": {
+      "description": "Declared column names.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Columns",
+      "type": "array"
+    },
+    "contract_name": {
+      "description": "Pandera model name.",
+      "title": "Contract Name",
+      "type": "string"
+    },
+    "dataset": {
+      "description": "Dataset whose contract was summarized.",
+      "title": "Dataset",
+      "type": "string"
+    },
+    "ref": {
+      "description": "Stable ref, contract:<dataset>.",
+      "title": "Ref",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ref",
+    "dataset",
+    "contract_name",
+    "columns",
+    "checks"
+  ],
+  "title": "ContractSummary",
+  "type": "object"
+}

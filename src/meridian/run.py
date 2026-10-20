@@ -1,6 +1,7 @@
-"""Run Sentinel → Triage on one injected partition."""
+"""Run Sentinel → Triage → RootCause on one injected partition."""
 
 import argparse
+import asyncio
 import sys
 import tempfile
 from datetime import date
@@ -8,10 +9,13 @@ from pathlib import Path
 from uuid import uuid4
 
 import numpy as np
+from langchain_core.tools import BaseTool
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 from meridian.agents.fake_llm import FakeTriageModel
+from meridian.agents.fake_root_cause import FakeRootCauseModel
 from meridian.agents.live_llm import build_live_chat
+from meridian.agents.root_cause import ToolChat
 from meridian.agents.triage import StructuredChat
 from meridian.config import MeridianConfigError, Settings, get_settings
 from meridian.contracts.fault_type import FaultType
@@ -19,7 +23,9 @@ from meridian.contracts.partition_metadata import PartitionMetadata
 from meridian.contracts.partition_ref import PartitionRef
 from meridian.contracts.state import MeridianState
 from meridian.graph.build import build_graph
+from meridian.injector.events import build_events, require_causal_event, write_events
 from meridian.injector.faults import INJECTORS
+from meridian.mcp_servers.client import load_stdio_tools
 from meridian.pipeline.catalog import DATASETS, DEFAULT_ROWS
 from meridian.pipeline.generate import DEFAULT_PARTITION_DATE, generate_dataset
 from meridian.pipeline.parquet import write_parquet
@@ -45,7 +51,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("seed must be >= 0")
     settings = get_settings()
     try:
-        chat, model_name = _chat(settings, live=args.live)
+        chat, model_name, root_chat, root_model = _chat(settings, live=args.live)
     except MeridianConfigError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -62,19 +68,32 @@ def main(argv: list[str] | None = None) -> int:
             rows=args.rows,
             partition=partition,
         )
-        state = _invoke(settings, chat, model_name, ref)
+        state = _invoke(settings, chat, model_name, root_chat, root_model, ref, root)
     print(state.model_dump_json(indent=2))
     return 0
 
 
-def _chat(settings: Settings, *, live: bool) -> tuple[StructuredChat, str]:
+def _chat(
+    settings: Settings,
+    *,
+    live: bool,
+) -> tuple[StructuredChat, str, ToolChat, str]:
     if not live:
-        fake = FakeTriageModel()
-        return fake, fake.model_name
+        triage = FakeTriageModel()
+        root = FakeRootCauseModel(mode="grounded")
+        return triage, triage.model_name, root, root.model_name
     settings.require_anthropic()
-    live_chat = build_live_chat(settings)
-    assert settings.triage_model is not None
-    return live_chat, settings.triage_model
+    if settings.triage_model is None or settings.triage_model.strip() == "":
+        raise MeridianConfigError("LLM", ["MERIDIAN_TRIAGE_MODEL"])
+    if settings.rootcause_model is None or settings.rootcause_model.strip() == "":
+        raise MeridianConfigError("LLM", ["MERIDIAN_ROOTCAUSE_MODEL"])
+    triage_chat = build_live_chat(settings)
+    root_chat = build_live_chat(
+        settings,
+        model=settings.rootcause_model,
+        model_env="MERIDIAN_ROOTCAUSE_MODEL",
+    )
+    return triage_chat, settings.triage_model, root_chat, settings.rootcause_model
 
 
 def _prepare(
@@ -88,11 +107,18 @@ def _prepare(
     partition: date,
 ) -> PartitionRef:
     clean = generate_dataset(dataset, seed, rows=rows, partition_date=partition)
+    label = None
     if intensity == 0:
         frame = clean
         arrived = on_time_arrival(partition)
+        events, _causal = build_events(
+            dataset=dataset,
+            seed=seed,
+            fault=None,
+            columns=[],
+        )
     else:
-        frame, _label = INJECTORS[fault](
+        frame, label = INJECTORS[fault](
             clean,
             np.random.default_rng(seed),
             intensity,
@@ -104,6 +130,17 @@ def _prepare(
             if fault is FaultType.LATE_PARTITION
             else on_time_arrival(partition)
         )
+        events, _causal = build_events(
+            dataset=dataset,
+            seed=seed,
+            fault=fault,
+            columns=list(label.columns_affected),
+            intensity=intensity,
+        )
+    events_path = root / "events.jsonl"
+    write_events(events_path, events)
+    if label is not None:
+        require_causal_event(label, events_path)
     holdout = generate_dataset(dataset, seed + 1, rows=rows, partition_date=partition)
     profile = fit_reference_profile(holdout)
     parquet_path = root / f"{dataset}.parquet"
@@ -127,16 +164,28 @@ def _invoke(
     settings: Settings,
     chat: StructuredChat,
     model_name: str,
+    root_chat: ToolChat,
+    root_model_name: str,
     ref: PartitionRef,
+    evidence_root: Path,
 ) -> MeridianState:
     checkpoint = Path(settings.checkpoint_path)
     checkpoint.parent.mkdir(parents=True, exist_ok=True)
+
+    def _load_tools() -> list[BaseTool]:
+        return asyncio.run(load_stdio_tools(evidence_root))
+
     with SqliteSaver.from_conn_string(str(checkpoint)) as saver:
         graph = build_graph(
             num_cpus=settings.ray_num_cpus,
             model_name=model_name,
             chat=chat,
             checkpointer=saver,
+            root_model_name=root_model_name,
+            root_chat=root_chat,
+            evidence_root=evidence_root,
+            tool_loader=_load_tools,
+            max_tool_calls=settings.rootcause_max_tool_calls,
         )
         run_id = uuid4()
         result = graph.invoke(

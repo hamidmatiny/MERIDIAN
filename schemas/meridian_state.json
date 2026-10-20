@@ -96,6 +96,20 @@
       "additionalProperties": false,
       "description": "A proposed root cause for one incident.\n\n``id`` is the value ``Patch.hypothesis_id`` must match.",
       "properties": {
+        "causal_event_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Change event the hypothesis names as the cause, if any.",
+          "title": "Causal Event Id"
+        },
         "confidence": {
           "description": "Confidence in this hypothesis, from 0.0 through 1.0.",
           "maximum": 1.0,
@@ -111,6 +125,13 @@
           "title": "Evidence",
           "type": "array"
         },
+        "grounding_violations": {
+          "default": 0,
+          "description": "Evidence items or a causal id dropped because no tool returned that ref.",
+          "minimum": 0,
+          "title": "Grounding Violations",
+          "type": "integer"
+        },
         "id": {
           "description": "Stable identifier. Patches reference this value.",
           "format": "uuid",
@@ -123,10 +144,24 @@
           "title": "Incident Id",
           "type": "string"
         },
+        "mechanism": {
+          "default": "unspecified",
+          "description": "Short description of how the cause produced the fault.",
+          "title": "Mechanism",
+          "type": "string"
+        },
         "root_cause_summary": {
           "description": "Plain-language root cause.",
           "title": "Root Cause Summary",
           "type": "string"
+        },
+        "suspect_columns": {
+          "description": "Columns the hypothesis blames.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Suspect Columns",
+          "type": "array"
         }
       },
       "required": [
@@ -636,6 +671,54 @@
       "title": "TimelineEvent",
       "type": "object"
     },
+    "ToolCall": {
+      "additionalProperties": false,
+      "description": "Accounting for a single read-only tool call.",
+      "properties": {
+        "args_hash": {
+          "description": "SHA-256 of the canonical JSON arguments.",
+          "title": "Args Hash",
+          "type": "string"
+        },
+        "latency_ms": {
+          "description": "Wall time of the call, in milliseconds.",
+          "minimum": 0,
+          "title": "Latency Ms",
+          "type": "integer"
+        },
+        "node": {
+          "description": "Graph node that made the call.",
+          "title": "Node",
+          "type": "string"
+        },
+        "ok": {
+          "description": "True when the tool returned a typed payload.",
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "ref_count": {
+          "description": "How many stable refs the response carried.",
+          "minimum": 0,
+          "title": "Ref Count",
+          "type": "integer"
+        },
+        "tool": {
+          "description": "Tool name.",
+          "title": "Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node",
+        "tool",
+        "args_hash",
+        "ref_count",
+        "latency_ms",
+        "ok"
+      ],
+      "title": "ToolCall",
+      "type": "object"
+    },
     "TriageResult": {
       "additionalProperties": false,
       "description": "Triage output after the severity floor has been applied.\n\n``severity`` and ``final_severity`` are the same value. ``llm_severity`` is\nwhat the model returned, and is unset when structured output never validated.",
@@ -837,6 +920,14 @@
       "format": "uuid",
       "title": "Run Id",
       "type": "string"
+    },
+    "tool_calls": {
+      "description": "Every tool call made during the run.",
+      "items": {
+        "$ref": "#/$defs/ToolCall"
+      },
+      "title": "Tool Calls",
+      "type": "array"
     }
   },
   "required": [

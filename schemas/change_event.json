@@ -1,0 +1,68 @@
+{
+  "$defs": {
+    "EventKind": {
+      "description": "Kind of change recorded in ``events.jsonl``.",
+      "enum": [
+        "SCHEMA_CHANGE",
+        "DEPLOY",
+        "CONFIG_CHANGE",
+        "UPSTREAM_DELAY",
+        "BACKFILL",
+        "DEPENDENCY_BUMP"
+      ],
+      "title": "EventKind",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A single pipeline event. The causal event for a fault is one of these.",
+  "properties": {
+    "author": {
+      "description": "Person or system that recorded the change.",
+      "title": "Author",
+      "type": "string"
+    },
+    "dataset": {
+      "description": "Dataset the change applies to.",
+      "title": "Dataset",
+      "type": "string"
+    },
+    "diff_excerpt": {
+      "description": "Short diff or config excerpt. Empty when there is none.",
+      "title": "Diff Excerpt",
+      "type": "string"
+    },
+    "id": {
+      "description": "Stable identifier. Tool refs use event:<id>.",
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/$defs/EventKind",
+      "description": "What kind of change this event is."
+    },
+    "summary": {
+      "description": "One-line description of the change.",
+      "title": "Summary",
+      "type": "string"
+    },
+    "ts": {
+      "description": "UTC time the change was recorded.",
+      "format": "date-time",
+      "title": "Ts",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "ts",
+    "kind",
+    "dataset",
+    "author",
+    "summary",
+    "diff_excerpt"
+  ],
+  "title": "ChangeEvent",
+  "type": "object"
+}

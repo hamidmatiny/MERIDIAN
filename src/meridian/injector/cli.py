@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from meridian.contracts.fault_type import FaultType
+from meridian.injector.events import build_events, require_causal_event, write_events
 from meridian.injector.faults import INJECTORS
 from meridian.pipeline.catalog import DATASETS, DEFAULT_ROWS
 from meridian.pipeline.generate import generate_dataset
@@ -42,6 +43,17 @@ def main(argv: list[str] | None = None) -> int:
     label_path = destination / "injected_fault.json"
     write_parquet(corrupted, parquet_path)
     label_path.write_text(label.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    events_path = destination / "events.jsonl"
+    events, _causal = build_events(
+        dataset=args.dataset,
+        seed=args.seed,
+        fault=fault,
+        columns=list(label.columns_affected),
+        intensity=args.intensity,
+    )
+    write_events(events_path, events)
+    require_causal_event(label, events_path)
     print(parquet_path)
     print(label_path)
+    print(events_path)
     return 0

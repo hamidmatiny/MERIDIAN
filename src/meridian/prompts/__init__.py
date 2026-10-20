@@ -1,9 +1,11 @@
-"""Versioned prompt files. The version string is recorded on each triage result."""
+"""Versioned prompt files. The version string is recorded on each model call."""
 
 from pathlib import Path
 
 TRIAGE_PROMPT_NAME = "triage"
 TRIAGE_PROMPT_VERSION = "v1"
+ROOT_CAUSE_PROMPT_NAME = "root_cause"
+ROOT_CAUSE_PROMPT_VERSION = "v1"
 
 
 def load_prompt(name: str, version: str) -> str:

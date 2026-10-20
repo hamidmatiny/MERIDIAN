@@ -8,6 +8,7 @@ from tests.agents.support import DETECTED_AT, write_partition
 
 import meridian.graph.build as build_mod
 from meridian.agents.fake_llm import FakeTriageModel
+from meridian.agents.fake_root_cause import FakeRootCauseModel
 from meridian.contracts.fault_type import FaultType
 from meridian.contracts.state import MeridianState
 from meridian.graph.build import build_graph
@@ -38,6 +39,10 @@ def test_clean_partition_stops_after_sentinel(tmp_path: Path, monkeypatch) -> No
             chat=FakeTriageModel(),
             checkpointer=saver,
             detected_at=DETECTED_AT,
+            root_model_name="fake-root-cause",
+            root_chat=FakeRootCauseModel(mode="immediate"),
+            evidence_root=tmp_path,
+            tools=[],
         )
         result = MeridianState.model_validate(
             graph.invoke(
@@ -76,6 +81,10 @@ def test_resume_after_sentinel_does_not_rerun_it(tmp_path: Path, monkeypatch) ->
             checkpointer=saver,
             detected_at=DETECTED_AT,
             interrupt_after=["sentinel"],
+            root_model_name="fake-root-cause",
+            root_chat=FakeRootCauseModel(mode="immediate"),
+            evidence_root=tmp_path,
+            tools=[],
         )
         config = {"configurable": {"thread_id": "resume-me"}}
         paused = MeridianState.model_validate(

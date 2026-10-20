@@ -1,6 +1,7 @@
 """Public contract types. Nodes exchange these models and nothing else."""
 
 from meridian.contracts.approval import ApprovalDecision, ApprovalOutcome
+from meridian.contracts.change_event import ChangeEvent, EventKind
 from meridian.contracts.fault_type import FaultType
 from meridian.contracts.hypothesis import Evidence, Hypothesis
 from meridian.contracts.incident import Incident, RowValue
@@ -14,6 +15,18 @@ from meridian.contracts.postmortem import Postmortem, TimelineEvent
 from meridian.contracts.reference_profile import ColumnProfile, ReferenceProfile
 from meridian.contracts.severity import Severity
 from meridian.contracts.state import MeridianState
+from meridian.contracts.tool_call import ToolCall
+from meridian.contracts.tool_results import (
+    ColumnComparison,
+    ColumnDescription,
+    ContractSummary,
+    EventPage,
+    EventView,
+    FailureSample,
+    LineageResult,
+    PartitionDescription,
+    ReferenceComparison,
+)
 from meridian.contracts.triage import TriageAssessment, TriageResult
 from meridian.contracts.verdict import Verdict
 from meridian.contracts.verification import VerificationResult
@@ -23,23 +36,35 @@ __all__ = [
     "MAX_FIX_ATTEMPTS",
     "ApprovalDecision",
     "ApprovalOutcome",
+    "ChangeEvent",
+    "ColumnComparison",
+    "ColumnDescription",
     "ColumnProfile",
+    "ContractSummary",
+    "EventKind",
+    "EventPage",
+    "EventView",
     "Evidence",
+    "FailureSample",
     "FaultType",
     "Hypothesis",
     "Incident",
     "IncidentCase",
     "InjectedFault",
     "LLMCall",
+    "LineageResult",
     "MeridianState",
+    "PartitionDescription",
     "PartitionMetadata",
     "PartitionRef",
     "Patch",
     "Postmortem",
+    "ReferenceComparison",
     "ReferenceProfile",
     "RowValue",
     "Severity",
     "TimelineEvent",
+    "ToolCall",
     "TriageAssessment",
     "TriageResult",
     "Verdict",

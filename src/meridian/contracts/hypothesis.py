@@ -36,3 +36,20 @@ class Hypothesis(MeridianModel):
         le=1.0,
         description="Confidence in this hypothesis, from 0.0 through 1.0.",
     )
+    causal_event_id: UUID | None = Field(
+        default=None,
+        description="Change event the hypothesis names as the cause, if any.",
+    )
+    suspect_columns: list[NonBlank] = Field(
+        default_factory=list,
+        description="Columns the hypothesis blames.",
+    )
+    mechanism: NonBlank = Field(
+        default="unspecified",
+        description="Short description of how the cause produced the fault.",
+    )
+    grounding_violations: int = Field(
+        default=0,
+        ge=0,
+        description="Evidence items or a causal id dropped because no tool returned that ref.",
+    )

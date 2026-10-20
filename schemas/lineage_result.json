@@ -1,0 +1,37 @@
+{
+  "additionalProperties": false,
+  "description": "Upstream or downstream datasets for one name.",
+  "properties": {
+    "dataset": {
+      "description": "Dataset that was queried.",
+      "title": "Dataset",
+      "type": "string"
+    },
+    "datasets": {
+      "description": "Related datasets, nearest first.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Datasets",
+      "type": "array"
+    },
+    "direction": {
+      "description": "upstream or downstream.",
+      "title": "Direction",
+      "type": "string"
+    },
+    "ref": {
+      "description": "Stable ref, lineage:upstream:<dataset> or downstream.",
+      "title": "Ref",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ref",
+    "dataset",
+    "direction",
+    "datasets"
+  ],
+  "title": "LineageResult",
+  "type": "object"
+}

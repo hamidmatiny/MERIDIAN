@@ -1,0 +1,76 @@
+{
+  "$defs": {
+    "ColumnDescription": {
+      "additionalProperties": false,
+      "description": "Dtype and null rate for one column of a partition.",
+      "properties": {
+        "column": {
+          "description": "Column name.",
+          "title": "Column",
+          "type": "string"
+        },
+        "dtype": {
+          "description": "Pandas dtype string.",
+          "title": "Dtype",
+          "type": "string"
+        },
+        "null_rate": {
+          "description": "Fraction of nulls.",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Null Rate",
+          "type": "number"
+        },
+        "ref": {
+          "description": "Stable ref, column:<path>:<column>.",
+          "title": "Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "column",
+        "dtype",
+        "null_rate",
+        "ref"
+      ],
+      "title": "ColumnDescription",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Shape of one parquet partition.",
+  "properties": {
+    "columns": {
+      "description": "One entry per column.",
+      "items": {
+        "$ref": "#/$defs/ColumnDescription"
+      },
+      "title": "Columns",
+      "type": "array"
+    },
+    "path": {
+      "description": "Parquet path that was read.",
+      "title": "Path",
+      "type": "string"
+    },
+    "ref": {
+      "description": "Stable ref, partition:<path>.",
+      "title": "Ref",
+      "type": "string"
+    },
+    "row_count": {
+      "description": "Number of rows.",
+      "minimum": 0,
+      "title": "Row Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "ref",
+    "path",
+    "row_count",
+    "columns"
+  ],
+  "title": "PartitionDescription",
+  "type": "object"
+}

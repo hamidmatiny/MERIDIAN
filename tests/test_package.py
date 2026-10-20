@@ -1,6 +1,6 @@
-"""The import surface stays off Slack, MCP, and the critic provider.
+"""The import surface stays off Slack and the critic provider.
 
-Phase 2 imports Ray, LangGraph, and langchain-anthropic.
+MCP and the MCP adapter are imported only by the tool servers.
 """
 
 import ast
@@ -14,8 +14,8 @@ BANNED = {
     "slack_sdk",
     "langchain_xai",
     "anthropic",
-    "mcp",
 }
+MCP_MODULES = {"mcp", "langchain_mcp_adapters"}
 
 
 def test_version_is_exposed() -> None:
@@ -41,4 +41,15 @@ def test_sources_do_not_import_agent_runtimes() -> None:
         banned = _imported_modules(path) & BANNED
         if banned:
             offenders.append(f"{path.relative_to(ROOT.parent.parent)}: {sorted(banned)}")
+    assert offenders == []
+
+
+def test_mcp_imports_stay_in_the_servers() -> None:
+    offenders: list[str] = []
+    for path in sorted(ROOT.rglob("*.py")):
+        if "mcp_servers" in path.parts:
+            continue
+        imported = _imported_modules(path) & MCP_MODULES
+        if imported:
+            offenders.append(f"{path.relative_to(ROOT.parent.parent)}: {sorted(imported)}")
     assert offenders == []

@@ -1,0 +1,51 @@
+{
+  "additionalProperties": false,
+  "description": "Sample rows stored on an incident.",
+  "properties": {
+    "incident_id": {
+      "description": "Incident the rows belong to.",
+      "format": "uuid",
+      "title": "Incident Id",
+      "type": "string"
+    },
+    "ref": {
+      "description": "Stable ref, sample:<incident_id>.",
+      "title": "Ref",
+      "type": "string"
+    },
+    "rows": {
+      "description": "Up to 20 scalar sample rows.",
+      "items": {
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "type": "object"
+      },
+      "title": "Rows",
+      "type": "array"
+    }
+  },
+  "required": [
+    "ref",
+    "incident_id",
+    "rows"
+  ],
+  "title": "FailureSample",
+  "type": "object"
+}

@@ -48,3 +48,25 @@ def downstream_of(dataset: str) -> list[str]:
         ordered.append(current)
         queue.extend(graph[current])
     return ordered
+
+
+def upstream_of(dataset: str) -> list[str]:
+    """Return datasets upstream of ``dataset``, nearest first."""
+    graph = _graph()
+    if dataset not in graph:
+        raise KeyError(f"unknown dataset {dataset!r}")
+    parents: dict[str, list[str]] = {name: [] for name in graph}
+    for source, children in graph.items():
+        for child in children:
+            parents[child].append(source)
+    ordered: list[str] = []
+    seen = {dataset}
+    queue = list(parents[dataset])
+    while queue:
+        current = queue.pop(0)
+        if current in seen:
+            continue
+        seen.add(current)
+        ordered.append(current)
+        queue.extend(parents[current])
+    return ordered

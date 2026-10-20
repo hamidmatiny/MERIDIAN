@@ -1,0 +1,13 @@
+{
+  "description": "Kind of change recorded in ``events.jsonl``.",
+  "enum": [
+    "SCHEMA_CHANGE",
+    "DEPLOY",
+    "CONFIG_CHANGE",
+    "UPSTREAM_DELAY",
+    "BACKFILL",
+    "DEPENDENCY_BUMP"
+  ],
+  "title": "EventKind",
+  "type": "string"
+}

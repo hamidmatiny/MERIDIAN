@@ -32,6 +32,20 @@
   "additionalProperties": false,
   "description": "A proposed root cause for one incident.\n\n``id`` is the value ``Patch.hypothesis_id`` must match.",
   "properties": {
+    "causal_event_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Change event the hypothesis names as the cause, if any.",
+      "title": "Causal Event Id"
+    },
     "confidence": {
       "description": "Confidence in this hypothesis, from 0.0 through 1.0.",
       "maximum": 1.0,
@@ -47,6 +61,13 @@
       "title": "Evidence",
       "type": "array"
     },
+    "grounding_violations": {
+      "default": 0,
+      "description": "Evidence items or a causal id dropped because no tool returned that ref.",
+      "minimum": 0,
+      "title": "Grounding Violations",
+      "type": "integer"
+    },
     "id": {
       "description": "Stable identifier. Patches reference this value.",
       "format": "uuid",
@@ -59,10 +80,24 @@
       "title": "Incident Id",
       "type": "string"
     },
+    "mechanism": {
+      "default": "unspecified",
+      "description": "Short description of how the cause produced the fault.",
+      "title": "Mechanism",
+      "type": "string"
+    },
     "root_cause_summary": {
       "description": "Plain-language root cause.",
       "title": "Root Cause Summary",
       "type": "string"
+    },
+    "suspect_columns": {
+      "description": "Columns the hypothesis blames.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Suspect Columns",
+      "type": "array"
     }
   },
   "required": [

@@ -9,6 +9,7 @@ import pandas as pd
 from meridian.contracts.fault_type import FaultType
 from meridian.contracts.injected_fault import InjectedFault
 from meridian.contracts.namespace import MERIDIAN_NAMESPACE
+from meridian.injector.events import causal_event_id
 from meridian.pipeline.catalog import require_dataset
 from meridian.quality.freshness import lateness_seconds
 
@@ -274,4 +275,5 @@ def _label(
         intensity=intensity,
         seed=seed,
         arrival_delay_s=arrival_delay_s,
+        causal_event_id=causal_event_id(dataset, fault, seed, intensity),
     )

@@ -31,6 +31,12 @@
       "description": "Seconds past the freshness deadline. Set only for a late partition.",
       "title": "Arrival Delay S"
     },
+    "causal_event_id": {
+      "description": "The one change event that caused this fault. It must be in events.jsonl.",
+      "format": "uuid",
+      "title": "Causal Event Id",
+      "type": "string"
+    },
     "columns_affected": {
       "description": "Columns the injector changed. Empty when only metadata moved.",
       "items": {
@@ -81,7 +87,8 @@
     "columns_affected",
     "rows_affected",
     "intensity",
-    "seed"
+    "seed",
+    "causal_event_id"
   ],
   "title": "InjectedFault",
   "type": "object"

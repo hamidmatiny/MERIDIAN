@@ -1,0 +1,36 @@
+{
+  "additionalProperties": false,
+  "description": "Dtype and null rate for one column of a partition.",
+  "properties": {
+    "column": {
+      "description": "Column name.",
+      "title": "Column",
+      "type": "string"
+    },
+    "dtype": {
+      "description": "Pandas dtype string.",
+      "title": "Dtype",
+      "type": "string"
+    },
+    "null_rate": {
+      "description": "Fraction of nulls.",
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Null Rate",
+      "type": "number"
+    },
+    "ref": {
+      "description": "Stable ref, column:<path>:<column>.",
+      "title": "Ref",
+      "type": "string"
+    }
+  },
+  "required": [
+    "column",
+    "dtype",
+    "null_rate",
+    "ref"
+  ],
+  "title": "ColumnDescription",
+  "type": "object"
+}

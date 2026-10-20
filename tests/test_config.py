@@ -167,3 +167,14 @@ def test_get_settings_reads_dotenv_without_overriding_the_environment(
     assert settings.anthropic_api_key.get_secret_value() == "from-env"
     assert settings.xai_api_key is not None
     assert settings.xai_api_key.get_secret_value() == "from-file"
+
+
+def test_rootcause_defaults_to_eight_tool_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear(monkeypatch)
+    monkeypatch.delenv("MERIDIAN_ROOTCAUSE_MODEL", raising=False)
+    monkeypatch.delenv("MERIDIAN_ROOTCAUSE_MAX_TOOL_CALLS", raising=False)
+    settings = Settings(_env_file=None)
+    assert settings.rootcause_model is None
+    assert settings.rootcause_max_tool_calls == 8
+    blank = Settings(_env_file=None, rootcause_model="  ")
+    assert blank.rootcause_model is None

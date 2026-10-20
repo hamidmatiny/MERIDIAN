@@ -1,0 +1,76 @@
+{
+  "$defs": {
+    "ColumnComparison": {
+      "additionalProperties": false,
+      "description": "PSI and null rate for one profiled column.",
+      "properties": {
+        "column": {
+          "description": "Column name.",
+          "title": "Column",
+          "type": "string"
+        },
+        "null_rate": {
+          "description": "Fraction of nulls in the partition.",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Null Rate",
+          "type": "number"
+        },
+        "psi": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "PSI against the reference profile. Unset if not finite.",
+          "title": "Psi"
+        },
+        "ref": {
+          "description": "Stable ref, psi:<dataset>:<column>.",
+          "title": "Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "column",
+        "psi",
+        "null_rate",
+        "ref"
+      ],
+      "title": "ColumnComparison",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Per-column comparison of a partition to a reference profile.",
+  "properties": {
+    "columns": {
+      "description": "One comparison per profiled column.",
+      "items": {
+        "$ref": "#/$defs/ColumnComparison"
+      },
+      "title": "Columns",
+      "type": "array"
+    },
+    "dataset": {
+      "description": "Dataset named by the reference profile.",
+      "title": "Dataset",
+      "type": "string"
+    },
+    "ref": {
+      "description": "Stable ref, psi:<dataset>.",
+      "title": "Ref",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ref",
+    "dataset",
+    "columns"
+  ],
+  "title": "ReferenceComparison",
+  "type": "object"
+}

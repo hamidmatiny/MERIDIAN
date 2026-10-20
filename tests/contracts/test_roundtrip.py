@@ -16,13 +16,25 @@ from tests.contracts.builders import (
 )
 
 from meridian.contracts import (
+    ChangeEvent,
+    ColumnComparison,
+    ColumnDescription,
     ColumnProfile,
+    ContractSummary,
+    EventPage,
+    EventView,
+    FailureSample,
     IncidentCase,
     InjectedFault,
+    LineageResult,
     MeridianState,
+    PartitionDescription,
     PartitionMetadata,
+    ReferenceComparison,
     ReferenceProfile,
+    ToolCall,
 )
+from meridian.contracts.change_event import EventKind
 from meridian.contracts.fault_type import FaultType
 from meridian.contracts.llm_call import LLMCall
 from meridian.contracts.partition_ref import PartitionRef
@@ -70,6 +82,7 @@ def test_each_model_round_trips_through_json() -> None:
             rows_affected=10,
             intensity=0.1,
             seed=42,
+            causal_event_id=UUID("6f9c0b3e-3c1a-4f5e-9a4b-8e2d1c0b7a12"),
         ),
         PartitionMetadata(
             dataset="vehicle_telemetry",
@@ -171,6 +184,7 @@ def test_round_trip_covers_every_contract_model() -> None:
             intensity=0.2,
             seed=1,
             arrival_delay_s=17_280,
+            causal_event_id=UUID("6f9c0b3e-3c1a-4f5e-9a4b-8e2d1c0b7a12"),
         ),
         "PartitionMetadata": PartitionMetadata(
             dataset="trip_summary",
@@ -231,6 +245,92 @@ def test_round_trip_covers_every_contract_model() -> None:
             latency_ms=1,
             attempt=1,
             succeeded=False,
+        ),
+        "ChangeEvent": ChangeEvent(
+            id=UUID("6f9c0b3e-3c1a-4f5e-9a4b-8e2d1c0b7a12"),
+            ts=datetime(2026, 10, 19, 15, 0, tzinfo=UTC),
+            kind=EventKind.SCHEMA_CHANGE,
+            dataset="vehicle_telemetry",
+            author="pipeline-bot",
+            summary="Causal event: renamed speed_mps",
+            diff_excerpt="- speed_mps",
+        ),
+        "ToolCall": ToolCall(
+            node="root_cause",
+            tool="get_event",
+            args_hash="abc",
+            ref_count=1,
+            latency_ms=1,
+            ok=True,
+        ),
+        "LineageResult": LineageResult(
+            ref="lineage:upstream:trip_summary",
+            dataset="trip_summary",
+            direction="upstream",
+            datasets=["vehicle_telemetry"],
+        ),
+        "ContractSummary": ContractSummary(
+            ref="contract:vehicle_telemetry",
+            dataset="vehicle_telemetry",
+            contract_name="VehicleTelemetry",
+            columns=["vehicle_id"],
+            checks=[],
+        ),
+        "ColumnDescription": ColumnDescription(
+            column="speed_mps",
+            dtype="float64",
+            null_rate=0.0,
+            ref="column:/tmp/part.parquet:speed_mps",
+        ),
+        "PartitionDescription": PartitionDescription(
+            ref="partition:/tmp/part.parquet",
+            path="/tmp/part.parquet",
+            row_count=1,
+            columns=[
+                ColumnDescription(
+                    column="speed_mps",
+                    dtype="float64",
+                    null_rate=0.0,
+                    ref="column:/tmp/part.parquet:speed_mps",
+                )
+            ],
+        ),
+        "ColumnComparison": ColumnComparison(
+            column="speed_mps",
+            psi=0.1,
+            null_rate=0.0,
+            ref="psi:vehicle_telemetry:speed_mps",
+        ),
+        "ReferenceComparison": ReferenceComparison(
+            ref="psi:vehicle_telemetry",
+            dataset="vehicle_telemetry",
+            columns=[
+                ColumnComparison(
+                    column="speed_mps",
+                    psi=None,
+                    null_rate=0.0,
+                    ref="psi:vehicle_telemetry:speed_mps",
+                )
+            ],
+        ),
+        "FailureSample": FailureSample(
+            ref="sample:11111111-1111-4111-8111-111111111111",
+            incident_id=UUID("11111111-1111-4111-8111-111111111111"),
+            rows=[{"speed_mps": 1.0}],
+        ),
+        "EventView": EventView(
+            id=UUID("6f9c0b3e-3c1a-4f5e-9a4b-8e2d1c0b7a12"),
+            ts=datetime(2026, 10, 19, 15, 0, tzinfo=UTC),
+            kind=EventKind.CONFIG_CHANGE,
+            dataset="vehicle_telemetry",
+            author="ada",
+            summary="Distractor: routine CONFIG_CHANGE",
+            diff_excerpt="unrelated",
+            ref="event:6f9c0b3e-3c1a-4f5e-9a4b-8e2d1c0b7a12",
+        ),
+        "EventPage": EventPage(
+            ref="events:vehicle_telemetry",
+            events=[],
         ),
     }
     model_names = {

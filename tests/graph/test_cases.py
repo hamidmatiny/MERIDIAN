@@ -1,5 +1,6 @@
 """Three incidents in one run stay in separate cases."""
 
+import logging
 from pathlib import Path
 from uuid import uuid4
 
@@ -8,6 +9,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from tests.agents.support import DETECTED_AT
 
 from meridian.agents.fake_llm import FakeTriageModel
+from meridian.agents.fake_root_cause import FakeRootCauseModel
 from meridian.agents.severity_rules import floor_for
 from meridian.agents.triage import run_triage
 from meridian.contracts.fault_type import FaultType
@@ -42,8 +44,13 @@ def _incidents() -> list[Incident]:
     ]
 
 
-def test_three_incidents_produce_independent_cases(tmp_path: Path, monkeypatch) -> None:
+def test_three_incidents_produce_independent_cases(
+    tmp_path: Path,
+    monkeypatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     incidents = _incidents()
+    caplog.set_level(logging.INFO, logger="meridian.graph")
 
     def _collect(refs: list[object], detected_at: object, *, num_cpus: int) -> list[Incident]:
         del refs, detected_at, num_cpus
@@ -58,6 +65,10 @@ def test_three_incidents_produce_independent_cases(tmp_path: Path, monkeypatch) 
             chat=FakeTriageModel(),
             checkpointer=saver,
             detected_at=DETECTED_AT,
+            root_model_name="fake-root-cause",
+            root_chat=FakeRootCauseModel(mode="immediate"),
+            evidence_root=tmp_path,
+            tools=[],
         )
         finished = graph.invoke(
             MeridianState(run_id=run_id),
@@ -80,8 +91,18 @@ def test_three_incidents_produce_independent_cases(tmp_path: Path, monkeypatch) 
         assert case.triage.final_severity is expected
         severities.add(case.severity)
     assert severities == {Severity.SEV2, Severity.SEV3, Severity.SEV4}
-    assert len(finished["llm_calls"]) == 3
+    triage_calls = [call for call in finished["llm_calls"] if call.node == "triage"]
+    assert len(triage_calls) == 3
     assert all(call.succeeded for call in finished["llm_calls"])
+    assert all(case.hypothesis is not None for case in cases.values())
+    order = next(
+        record.message
+        for record in caplog.records
+        if record.message.startswith("root cause order:")
+    )
+    parts = order.removeprefix("root cause order: ").split(", ")
+    ranks = [part.rsplit(":", maxsplit=1)[1] for part in parts]
+    assert ranks == ["SEV2", "SEV3", "SEV4"]
 
 
 def test_reducer_merges_by_incident_and_appends_calls() -> None:
