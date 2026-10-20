@@ -1,6 +1,10 @@
 """LangGraph state for the incident-response graph.
 
-The graph itself is planned. This model is the only state those nodes will share.
+The graph itself starts at Sentinel and stops after Triage. Later nodes are planned.
+This model is the only state those nodes will share.
+
+``partitions`` is the Sentinel input. ``incidents`` is the batch Sentinel emits.
+``incident`` remains the single record a later phase attaches a hypothesis to.
 
 Loop limits from AGENTS.md:
 
@@ -18,8 +22,11 @@ from meridian.contracts.approval import ApprovalDecision
 from meridian.contracts.base import MeridianModel
 from meridian.contracts.hypothesis import Hypothesis
 from meridian.contracts.incident import Incident
+from meridian.contracts.llm_call import LLMCall
+from meridian.contracts.partition_ref import PartitionRef
 from meridian.contracts.patch import Patch
 from meridian.contracts.postmortem import Postmortem
+from meridian.contracts.triage import TriageResult
 from meridian.contracts.verdict import Verdict
 from meridian.contracts.verification import VerificationResult
 
@@ -76,6 +83,22 @@ class MeridianState(MeridianModel):
         ge=0,
         le=MAX_CRITIC_ROUNDS,
         description="Completed Fix/Critic rounds so far. Maximum is 3.",
+    )
+    partitions: list[PartitionRef] = Field(
+        default_factory=list,
+        description="Partitions Sentinel evaluates.",
+    )
+    incidents: list[Incident] = Field(
+        default_factory=list,
+        description="Incidents Sentinel emitted, deduplicated by id.",
+    )
+    triage_results: list[TriageResult] = Field(
+        default_factory=list,
+        description="One triage decision per incident.",
+    )
+    llm_calls: list[LLMCall] = Field(
+        default_factory=list,
+        description="Every model attempt made during the run.",
     )
 
     @model_validator(mode="after")

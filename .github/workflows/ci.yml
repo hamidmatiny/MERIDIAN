@@ -30,7 +30,7 @@ jobs:
         run: uv run mypy --strict src
 
       - name: Pytest
-        run: uv run pytest --cov=src/meridian --cov-fail-under=95 -q
+        run: uv run pytest --cov=src/meridian --cov-fail-under=95 -q -m "not live"
 
       - name: Schema drift
         run: uv run python scripts/export_schemas.py && test -z "$(git status --porcelain schemas/)"

@@ -243,6 +243,138 @@
       "title": "Incident",
       "type": "object"
     },
+    "LLMCall": {
+      "additionalProperties": false,
+      "description": "Token and latency accounting for a single model attempt.",
+      "properties": {
+        "attempt": {
+          "description": "1-based attempt number for this incident.",
+          "minimum": 1,
+          "title": "Attempt",
+          "type": "integer"
+        },
+        "input_tokens": {
+          "description": "Input tokens reported by the response.",
+          "minimum": 0,
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "latency_ms": {
+          "description": "Wall time of the attempt, in milliseconds.",
+          "minimum": 0,
+          "title": "Latency Ms",
+          "type": "integer"
+        },
+        "model": {
+          "description": "Model name from configuration, or the fake model name.",
+          "title": "Model",
+          "type": "string"
+        },
+        "node": {
+          "description": "Graph node that made the call.",
+          "title": "Node",
+          "type": "string"
+        },
+        "output_tokens": {
+          "description": "Output tokens reported by the response.",
+          "minimum": 0,
+          "title": "Output Tokens",
+          "type": "integer"
+        },
+        "prompt_version": {
+          "description": "Prompt file version sent with the call.",
+          "title": "Prompt Version",
+          "type": "string"
+        },
+        "succeeded": {
+          "description": "True when structured output validated.",
+          "title": "Succeeded",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "node",
+        "model",
+        "prompt_version",
+        "input_tokens",
+        "output_tokens",
+        "latency_ms",
+        "attempt",
+        "succeeded"
+      ],
+      "title": "LLMCall",
+      "type": "object"
+    },
+    "PartitionMetadata": {
+      "additionalProperties": false,
+      "description": "When a partition was produced and when it arrived.",
+      "properties": {
+        "arrived_at": {
+          "description": "UTC time the partition arrived.",
+          "format": "date-time",
+          "title": "Arrived At",
+          "type": "string"
+        },
+        "dataset": {
+          "description": "Dataset this partition belongs to.",
+          "title": "Dataset",
+          "type": "string"
+        },
+        "partition_date": {
+          "description": "Calendar date of the partition.",
+          "format": "date",
+          "title": "Partition Date",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dataset",
+        "partition_date",
+        "arrived_at"
+      ],
+      "title": "PartitionMetadata",
+      "type": "object"
+    },
+    "PartitionRef": {
+      "additionalProperties": false,
+      "description": "A stored partition plus the reference profile it is scored against.",
+      "properties": {
+        "dataset": {
+          "description": "Dataset name, matching the parquet schema.",
+          "title": "Dataset",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/$defs/PartitionMetadata",
+          "description": "Arrival metadata for the freshness check."
+        },
+        "parquet_path": {
+          "description": "Path to the partition parquet file.",
+          "title": "Parquet Path",
+          "type": "string"
+        },
+        "partition_date": {
+          "description": "Partition date the file belongs to.",
+          "format": "date",
+          "title": "Partition Date",
+          "type": "string"
+        },
+        "reference_profile_path": {
+          "description": "Path to a ReferenceProfile JSON fit on a different clean partition.",
+          "title": "Reference Profile Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dataset",
+        "partition_date",
+        "parquet_path",
+        "metadata",
+        "reference_profile_path"
+      ],
+      "title": "PartitionRef",
+      "type": "object"
+    },
     "Patch": {
       "additionalProperties": false,
       "description": "A code change proposed for one hypothesis.\n\n``id`` is the value later verdicts, verification, and approval must match.",
@@ -393,6 +525,85 @@
       "title": "TimelineEvent",
       "type": "object"
     },
+    "TriageResult": {
+      "additionalProperties": false,
+      "description": "Triage output after the severity floor has been applied.\n\n``severity`` and ``final_severity`` are the same value. ``llm_severity`` is\nwhat the model returned, and is unset when structured output never validated.",
+      "properties": {
+        "affected_consumers": {
+          "description": "Downstream datasets named by triage.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Affected Consumers",
+          "type": "array"
+        },
+        "confidence": {
+          "description": "Confidence from 0 to 1.",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "final_severity": {
+          "$ref": "#/$defs/Severity",
+          "description": "The more severe of the model severity and the floor."
+        },
+        "floor_severity": {
+          "$ref": "#/$defs/Severity",
+          "description": "Deterministic minimum severity."
+        },
+        "incident_id": {
+          "description": "Incident this decision refers to.",
+          "format": "uuid",
+          "title": "Incident Id",
+          "type": "string"
+        },
+        "llm_severity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Severity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Severity the model returned. Unset when triage degraded."
+        },
+        "prompt_version": {
+          "description": "Version of the triage prompt that was loaded.",
+          "title": "Prompt Version",
+          "type": "string"
+        },
+        "rationale": {
+          "description": "Why this severity was chosen.",
+          "title": "Rationale",
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity",
+          "description": "Severity stored on the run. Equals final_severity."
+        },
+        "triage_degraded": {
+          "default": false,
+          "description": "True when structured output failed and the floor was kept.",
+          "title": "Triage Degraded",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "incident_id",
+        "severity",
+        "rationale",
+        "affected_consumers",
+        "confidence",
+        "floor_severity",
+        "final_severity",
+        "prompt_version"
+      ],
+      "title": "TriageResult",
+      "type": "object"
+    },
     "Verdict": {
       "additionalProperties": false,
       "description": "An independent reviewer's decision on one patch.\n\n``round`` is the Fix/Critic round and must be from 1 through 3.",
@@ -538,6 +749,30 @@
       "default": null,
       "description": "Incident under response, if detected."
     },
+    "incidents": {
+      "description": "Incidents Sentinel emitted, deduplicated by id.",
+      "items": {
+        "$ref": "#/$defs/Incident"
+      },
+      "title": "Incidents",
+      "type": "array"
+    },
+    "llm_calls": {
+      "description": "Every model attempt made during the run.",
+      "items": {
+        "$ref": "#/$defs/LLMCall"
+      },
+      "title": "Llm Calls",
+      "type": "array"
+    },
+    "partitions": {
+      "description": "Partitions Sentinel evaluates.",
+      "items": {
+        "$ref": "#/$defs/PartitionRef"
+      },
+      "title": "Partitions",
+      "type": "array"
+    },
     "patch": {
       "anyOf": [
         {
@@ -561,6 +796,14 @@
       ],
       "default": null,
       "description": "Incident report, if the loop has finished."
+    },
+    "triage_results": {
+      "description": "One triage decision per incident.",
+      "items": {
+        "$ref": "#/$defs/TriageResult"
+      },
+      "title": "Triage Results",
+      "type": "array"
     },
     "verdict": {
       "anyOf": [

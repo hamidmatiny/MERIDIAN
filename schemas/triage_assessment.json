@@ -1,0 +1,58 @@
+{
+  "$defs": {
+    "Severity": {
+      "description": "How urgently an incident must be handled. SEV1 is the most severe.",
+      "enum": [
+        "SEV1",
+        "SEV2",
+        "SEV3",
+        "SEV4"
+      ],
+      "title": "Severity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The fields the triage model is asked to fill. The floor is applied afterwards.",
+  "properties": {
+    "affected_consumers": {
+      "description": "Downstream datasets the model believes are affected.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Affected Consumers",
+      "type": "array"
+    },
+    "confidence": {
+      "description": "Model confidence in this assessment, from 0 to 1.",
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "incident_id": {
+      "description": "Incident this assessment refers to.",
+      "format": "uuid",
+      "title": "Incident Id",
+      "type": "string"
+    },
+    "rationale": {
+      "description": "Why the model chose that severity.",
+      "title": "Rationale",
+      "type": "string"
+    },
+    "severity": {
+      "$ref": "#/$defs/Severity",
+      "description": "Severity the model proposed."
+    }
+  },
+  "required": [
+    "incident_id",
+    "severity",
+    "rationale",
+    "affected_consumers",
+    "confidence"
+  ],
+  "title": "TriageAssessment",
+  "type": "object"
+}

@@ -1,0 +1,92 @@
+{
+  "$defs": {
+    "Severity": {
+      "description": "How urgently an incident must be handled. SEV1 is the most severe.",
+      "enum": [
+        "SEV1",
+        "SEV2",
+        "SEV3",
+        "SEV4"
+      ],
+      "title": "Severity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Triage output after the severity floor has been applied.\n\n``severity`` and ``final_severity`` are the same value. ``llm_severity`` is\nwhat the model returned, and is unset when structured output never validated.",
+  "properties": {
+    "affected_consumers": {
+      "description": "Downstream datasets named by triage.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Affected Consumers",
+      "type": "array"
+    },
+    "confidence": {
+      "description": "Confidence from 0 to 1.",
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "final_severity": {
+      "$ref": "#/$defs/Severity",
+      "description": "The more severe of the model severity and the floor."
+    },
+    "floor_severity": {
+      "$ref": "#/$defs/Severity",
+      "description": "Deterministic minimum severity."
+    },
+    "incident_id": {
+      "description": "Incident this decision refers to.",
+      "format": "uuid",
+      "title": "Incident Id",
+      "type": "string"
+    },
+    "llm_severity": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Severity"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Severity the model returned. Unset when triage degraded."
+    },
+    "prompt_version": {
+      "description": "Version of the triage prompt that was loaded.",
+      "title": "Prompt Version",
+      "type": "string"
+    },
+    "rationale": {
+      "description": "Why this severity was chosen.",
+      "title": "Rationale",
+      "type": "string"
+    },
+    "severity": {
+      "$ref": "#/$defs/Severity",
+      "description": "Severity stored on the run. Equals final_severity."
+    },
+    "triage_degraded": {
+      "default": false,
+      "description": "True when structured output failed and the floor was kept.",
+      "title": "Triage Degraded",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "incident_id",
+    "severity",
+    "rationale",
+    "affected_consumers",
+    "confidence",
+    "floor_severity",
+    "final_severity",
+    "prompt_version"
+  ],
+  "title": "TriageResult",
+  "type": "object"
+}

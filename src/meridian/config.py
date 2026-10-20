@@ -7,7 +7,7 @@ or Slack asks explicitly with ``require_llm`` or ``require_slack``.
 from typing import Self
 
 from dotenv import load_dotenv
-from pydantic import Field, SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -51,6 +51,7 @@ class Settings(BaseSettings):
         extra="ignore",
         frozen=True,
         env_ignore_empty=True,
+        populate_by_name=True,
     )
 
     anthropic_api_key: SecretStr | None = Field(
@@ -77,6 +78,22 @@ class Settings(BaseSettings):
         default=None,
         description="Postgres URL reserved for the audit log. Unused in Phase 0.",
     )
+    triage_model: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MERIDIAN_TRIAGE_MODEL"),
+        description="Model name for triage. Required only for a live run.",
+    )
+    ray_num_cpus: int = Field(
+        default=2,
+        ge=1,
+        validation_alias=AliasChoices("RAY_NUM_CPUS", "MERIDIAN_RAY_NUM_CPUS"),
+        description="CPUs Ray may use for Sentinel tasks.",
+    )
+    checkpoint_path: str = Field(
+        default="data/meridian-checkpoints.sqlite",
+        validation_alias=AliasChoices("MERIDIAN_CHECKPOINT_PATH"),
+        description="SQLite file the LangGraph checkpointer writes.",
+    )
 
     @field_validator(
         "anthropic_api_key",
@@ -85,6 +102,7 @@ class Settings(BaseSettings):
         "slack_signing_secret",
         "slack_approval_channel",
         "database_url",
+        "triage_model",
         mode="before",
     )
     @classmethod

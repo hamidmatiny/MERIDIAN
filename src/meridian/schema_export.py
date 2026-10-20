@@ -16,13 +16,17 @@ from meridian.contracts import (
     Hypothesis,
     Incident,
     InjectedFault,
+    LLMCall,
     MeridianState,
     PartitionMetadata,
+    PartitionRef,
     Patch,
     Postmortem,
     ReferenceProfile,
     Severity,
     TimelineEvent,
+    TriageAssessment,
+    TriageResult,
     Verdict,
     VerificationResult,
 )
@@ -48,6 +52,10 @@ CONTRACT_SCHEMAS: tuple[tuple[str, SchemaType], ...] = (
     ("partition_metadata", PartitionMetadata),
     ("column_profile", ColumnProfile),
     ("reference_profile", ReferenceProfile),
+    ("partition_ref", PartitionRef),
+    ("triage_assessment", TriageAssessment),
+    ("triage_result", TriageResult),
+    ("llm_call", LLMCall),
 )
 
 

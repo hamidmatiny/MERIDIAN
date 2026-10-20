@@ -2,11 +2,11 @@
 
 MERIDIAN is being built to detect data-quality failures, explain them, propose a fix, verify that fix against the failing data, and ask a human in Slack before anything merges. The path is a fixed LangGraph state machine. The goal is to shorten the time from incident to a verified, approved fix.
 
-This repository has the Phase 0 contracts and CI, and the Phase 1 data contracts and incident injector. The agent graph, Ray replay, and Slack gate are planned. Nothing here calls a model, Ray, or Slack.
+This repository has the Phase 0 contracts, the Phase 1 data contracts and injector, and the Phase 2 Sentinel → Triage graph. Root cause, the fix loop, and the Slack gate are not built. Unit tests do not call a model, Ray's object store beyond the local Sentinel tasks, or Slack.
 
 ## Target agent graph
 
-The diagram is the target architecture. The nodes are not implemented.
+Sentinel and Triage are implemented. The other nodes are planned.
 
 ```mermaid
 flowchart TD
@@ -22,6 +22,11 @@ flowchart TD
   sentinel --> triage --> rootCause --> fix --> critic --> verifier --> slack --> postmortem
   critic -->|"objections, at most 3 rounds"| fix
   verifier -->|"replay failed, at most 2 reroutes"| fix
+
+  classDef built fill:#d9ead3,stroke:#38761d
+  classDef planned fill:#f3f3f3,stroke:#999
+  class sentinel,triage built
+  class rootCause,fix,critic,verifier,slack,postmortem planned
 ```
 
 | Node | Planned role |
@@ -42,8 +47,8 @@ Loop limits, already enforced on `MeridianState`: Fix and Critic stop after 3 ro
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 0 | Repository, ADRs, Pydantic contracts, CI | done |
-| 1 | Pandera contracts and an incident injector | in progress |
-| 2 | Graph skeleton: Sentinel to Triage | planned |
+| 1 | Pandera contracts and an incident injector | done |
+| 2 | Graph skeleton: Sentinel to Triage | in progress |
 | 3 | RootCause agent with MCP tools | planned |
 | 4 | Fix, Critic, and Verifier loop on Ray | planned |
 | 5 | Slack approval gate and Postmortem | planned |
@@ -55,10 +60,14 @@ Loop limits, already enforced on `MeridianState`: Fix and Critic stop after 3 ro
 - `src/meridian/contracts/` — frozen Pydantic models, including `InjectedFault` and `PartitionMetadata`.
 - `src/meridian/pipeline/` — seeded generators for the three fleet datasets, plus `lineage.yaml`.
 - `src/meridian/quality/` — pandera models, PSI, the freshness SLA, and `evaluate`, which returns `Incident` records.
+- `src/meridian/agents/` — Sentinel on Ray, the severity floor, and Triage.
+- `src/meridian/graph/` — the Sentinel → Triage graph and the SQLite checkpointer wiring.
+- `src/meridian/prompts/triage.v1.md` — the versioned triage prompt.
+- `src/meridian/run.py` — `python -m meridian.run`. `--fake-llm` is the default. `--live` calls Claude.
 - `src/meridian/injector/` — one injector per fault type, and the `python -m meridian.injector` CLI.
 - `src/meridian/config.py` — settings loaded from the environment and `.env`. Missing keys do not crash import. `Settings.require_llm()` and `Settings.require_slack()` raise when a caller actually needs those credentials.
 - `schemas/` — JSON Schema generated from the contracts.
-- `docs/adr/` — ADR-001 through ADR-009.
+- `docs/adr/` — ADR-001 through ADR-013.
 - `.github/workflows/ci.yml` — the checks below.
 
 Generated Parquet under `data/` is gitignored.
@@ -83,9 +92,10 @@ uv sync
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy --strict src
-uv run pytest --cov=src/meridian --cov-fail-under=95 -q
+uv run pytest --cov=src/meridian --cov-fail-under=95 -q -m "not live"
 uv run python scripts/export_schemas.py && test -z "$(git status --porcelain schemas/)"
-uv run python -m meridian.injector --dataset vehicle_telemetry --fault DISTRIBUTION_SHIFT --intensity 0.3 --seed 42 --out data/
+uv run python -m meridian.run --dataset vehicle_telemetry --fault SCHEMA_DRIFT --intensity 0.3 --seed 42 --fake-llm
+uv run python -m meridian.run --dataset fleet_daily_kpi --fault NULL_EXPLOSION --intensity 0.0 --seed 7 --fake-llm
 ```
 
 Copy `.env.example` to `.env` only when a later phase needs credentials. Phase 0 tests do not call external services.

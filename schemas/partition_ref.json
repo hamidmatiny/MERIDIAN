@@ -1,0 +1,72 @@
+{
+  "$defs": {
+    "PartitionMetadata": {
+      "additionalProperties": false,
+      "description": "When a partition was produced and when it arrived.",
+      "properties": {
+        "arrived_at": {
+          "description": "UTC time the partition arrived.",
+          "format": "date-time",
+          "title": "Arrived At",
+          "type": "string"
+        },
+        "dataset": {
+          "description": "Dataset this partition belongs to.",
+          "title": "Dataset",
+          "type": "string"
+        },
+        "partition_date": {
+          "description": "Calendar date of the partition.",
+          "format": "date",
+          "title": "Partition Date",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dataset",
+        "partition_date",
+        "arrived_at"
+      ],
+      "title": "PartitionMetadata",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A stored partition plus the reference profile it is scored against.",
+  "properties": {
+    "dataset": {
+      "description": "Dataset name, matching the parquet schema.",
+      "title": "Dataset",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/PartitionMetadata",
+      "description": "Arrival metadata for the freshness check."
+    },
+    "parquet_path": {
+      "description": "Path to the partition parquet file.",
+      "title": "Parquet Path",
+      "type": "string"
+    },
+    "partition_date": {
+      "description": "Partition date the file belongs to.",
+      "format": "date",
+      "title": "Partition Date",
+      "type": "string"
+    },
+    "reference_profile_path": {
+      "description": "Path to a ReferenceProfile JSON fit on a different clean partition.",
+      "title": "Reference Profile Path",
+      "type": "string"
+    }
+  },
+  "required": [
+    "dataset",
+    "partition_date",
+    "parquet_path",
+    "metadata",
+    "reference_profile_path"
+  ],
+  "title": "PartitionRef",
+  "type": "object"
+}

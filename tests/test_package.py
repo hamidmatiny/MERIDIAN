@@ -1,4 +1,7 @@
-"""The import surface stays off the agent runtimes. Pandera is part of Phase 1."""
+"""The import surface stays off Slack, MCP, and the critic provider.
+
+Phase 2 imports Ray, LangGraph, and langchain-anthropic.
+"""
 
 import ast
 from pathlib import Path
@@ -7,13 +10,9 @@ import meridian
 
 ROOT = Path(__file__).resolve().parents[1] / "src" / "meridian"
 BANNED = {
-    "ray",
     "slack_bolt",
     "slack_sdk",
-    "langgraph",
-    "langchain_anthropic",
     "langchain_xai",
-    "langchain_core",
     "anthropic",
     "mcp",
 }

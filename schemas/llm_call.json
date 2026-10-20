@@ -1,0 +1,62 @@
+{
+  "additionalProperties": false,
+  "description": "Token and latency accounting for a single model attempt.",
+  "properties": {
+    "attempt": {
+      "description": "1-based attempt number for this incident.",
+      "minimum": 1,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "input_tokens": {
+      "description": "Input tokens reported by the response.",
+      "minimum": 0,
+      "title": "Input Tokens",
+      "type": "integer"
+    },
+    "latency_ms": {
+      "description": "Wall time of the attempt, in milliseconds.",
+      "minimum": 0,
+      "title": "Latency Ms",
+      "type": "integer"
+    },
+    "model": {
+      "description": "Model name from configuration, or the fake model name.",
+      "title": "Model",
+      "type": "string"
+    },
+    "node": {
+      "description": "Graph node that made the call.",
+      "title": "Node",
+      "type": "string"
+    },
+    "output_tokens": {
+      "description": "Output tokens reported by the response.",
+      "minimum": 0,
+      "title": "Output Tokens",
+      "type": "integer"
+    },
+    "prompt_version": {
+      "description": "Prompt file version sent with the call.",
+      "title": "Prompt Version",
+      "type": "string"
+    },
+    "succeeded": {
+      "description": "True when structured output validated.",
+      "title": "Succeeded",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "node",
+    "model",
+    "prompt_version",
+    "input_tokens",
+    "output_tokens",
+    "latency_ms",
+    "attempt",
+    "succeeded"
+  ],
+  "title": "LLMCall",
+  "type": "object"
+}

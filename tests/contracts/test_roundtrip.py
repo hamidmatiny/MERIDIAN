@@ -23,6 +23,10 @@ from meridian.contracts import (
     ReferenceProfile,
 )
 from meridian.contracts.fault_type import FaultType
+from meridian.contracts.llm_call import LLMCall
+from meridian.contracts.partition_ref import PartitionRef
+from meridian.contracts.severity import Severity
+from meridian.contracts.triage import TriageAssessment, TriageResult
 from meridian.schema_export import CONTRACT_SCHEMAS
 
 
@@ -82,6 +86,45 @@ def test_each_model_round_trips_through_json() -> None:
                 )
             ],
         ),
+        PartitionRef(
+            dataset="vehicle_telemetry",
+            partition_date=date(2026, 10, 19),
+            parquet_path="data/vehicle_telemetry.parquet",
+            metadata=PartitionMetadata(
+                dataset="vehicle_telemetry",
+                partition_date=date(2026, 10, 19),
+                arrived_at=datetime(2026, 10, 20, 0, 30, tzinfo=UTC),
+            ),
+            reference_profile_path="data/reference_profile.json",
+        ),
+        TriageAssessment(
+            incident_id=incident.id,
+            severity=Severity.SEV4,
+            rationale="low",
+            affected_consumers=["trip_summary"],
+            confidence=0.25,
+        ),
+        TriageResult(
+            incident_id=incident.id,
+            severity=Severity.SEV2,
+            rationale="raised to the floor",
+            affected_consumers=["trip_summary"],
+            confidence=0.25,
+            llm_severity=Severity.SEV4,
+            floor_severity=Severity.SEV2,
+            final_severity=Severity.SEV2,
+            prompt_version="v1",
+        ),
+        LLMCall(
+            node="triage",
+            model="fake-triage",
+            prompt_version="v1",
+            input_tokens=12,
+            output_tokens=8,
+            latency_ms=3,
+            attempt=1,
+            succeeded=True,
+        ),
     ]
     for model in models:
         _round_trip(model)
@@ -132,6 +175,45 @@ def test_round_trip_covers_every_contract_model() -> None:
                     expected_proportions=[0.5, 0.5],
                 )
             ],
+        ),
+        "PartitionRef": PartitionRef(
+            dataset="fleet_daily_kpi",
+            partition_date=date(2026, 10, 19),
+            parquet_path="data/fleet.parquet",
+            metadata=PartitionMetadata(
+                dataset="fleet_daily_kpi",
+                partition_date=date(2026, 10, 19),
+                arrived_at=datetime(2026, 10, 20, 0, 30, tzinfo=UTC),
+            ),
+            reference_profile_path="data/profile.json",
+        ),
+        "TriageAssessment": TriageAssessment(
+            incident_id=incident.id,
+            severity=Severity.SEV3,
+            rationale="watch",
+            affected_consumers=[],
+            confidence=0.5,
+        ),
+        "TriageResult": TriageResult(
+            incident_id=incident.id,
+            severity=Severity.SEV3,
+            rationale="watch",
+            affected_consumers=[],
+            confidence=0.5,
+            llm_severity=Severity.SEV3,
+            floor_severity=Severity.SEV4,
+            final_severity=Severity.SEV3,
+            prompt_version="v1",
+        ),
+        "LLMCall": LLMCall(
+            node="triage",
+            model="fake-triage",
+            prompt_version="v1",
+            input_tokens=1,
+            output_tokens=1,
+            latency_ms=1,
+            attempt=1,
+            succeeded=False,
         ),
     }
     model_names = {
