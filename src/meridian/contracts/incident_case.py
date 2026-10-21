@@ -30,6 +30,40 @@ MAX_CRITIC_ROUNDS: Final = 3
 MAX_FIX_ATTEMPTS: Final = 3
 
 
+class Attempt(MeridianModel):
+    """One Fix execution and everything recorded for it.
+
+    A later attempt appends another ``Attempt``. It does not replace this one.
+    """
+
+    patch: Patch
+    dry_run: DryRunReport | None = Field(
+        default=None,
+        description="Dry-run for this attempt. None when the attempt did not reach one.",
+    )
+    verdicts: list[Verdict] = Field(
+        default_factory=list,
+        description="Critic verdicts recorded for this attempt.",
+    )
+    verification: VerificationResult | None = Field(
+        default=None,
+        description="Verifier result for this attempt. None until the verifier runs.",
+    )
+
+    @model_validator(mode="after")
+    def ids_match(self) -> Self:
+        """Keep this attempt's reviews pointed at its own patch."""
+        for verdict in self.verdicts:
+            _same(verdict.patch_id, self.patch.id, "attempt verdict.patch_id must equal patch.id")
+        if self.verification is not None:
+            _same(
+                self.verification.patch_id,
+                self.patch.id,
+                "attempt verification.patch_id must equal patch.id",
+            )
+        return self
+
+
 def _same(child_id: UUID, parent_id: UUID, message: str) -> None:
     if child_id != parent_id:
         raise ValueError(message)
@@ -113,6 +147,10 @@ class IncidentCase(MeridianModel):
         default=False,
         description="True when the hypothesis is the tool-budget fallback.",
     )
+    attempts: list[Attempt] = Field(
+        default_factory=list,
+        description="Closed Fix attempts. The open attempt stays on the case fields.",
+    )
 
     @property
     def severity(self) -> Severity | None:
@@ -174,3 +212,20 @@ class IncidentCase(MeridianModel):
                 "postmortem.incident_id must equal incident.id",
             )
         return self
+
+
+def attempt_history(case: IncidentCase) -> list[Attempt]:
+    """Closed attempts plus the open one. A stored attempt is not rewritten."""
+    closed = list(case.attempts)
+    if case.patch is None:
+        return closed
+    used = sum(len(item.verdicts) for item in closed)
+    current = Attempt(
+        patch=case.patch,
+        dry_run=case.dry_run,
+        verdicts=list(case.verdicts[used:]),
+        verification=case.verification,
+    )
+    if closed and closed[-1] == current:
+        return closed
+    return [*closed, current]

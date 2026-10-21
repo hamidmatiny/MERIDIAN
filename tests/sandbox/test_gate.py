@@ -32,6 +32,20 @@ def test_banned_construct_is_rejected(source: str) -> None:
     assert check_source(source)
 
 
+def test_each_context_reads_the_config_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
+    from meridian.config import REGRESSION_MODULES, REPAIR_MODULES
+
+    assert REPAIR_MODULES == ("pandas", "numpy", "math", "datetime")
+    assert REGRESSION_MODULES == ("pandas", "numpy", "math", "datetime", "pandera")
+    monkeypatch.setattr("meridian.sandbox.gate.REPAIR_MODULES", ("math",))
+    monkeypatch.setattr("meridian.sandbox.gate.REGRESSION_MODULES", ("math", "pandera"))
+    assert check_source("import pandas\n")
+    assert check_source("import math\n") == []
+    assert check_source("import pandera\n")
+    assert check_source("import pandera\n", allow_pandera=True) == []
+    assert check_source("import math\n", allow_pandera=True) == []
+
+
 def test_allowlisted_import_and_pandera_split() -> None:
     source = "import pandas as pd\nimport math\nfrom datetime import datetime\n"
     assert check_source(source) == []

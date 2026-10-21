@@ -1,6 +1,7 @@
 """Run Sentinel → Triage → RootCause → Fix → Critic → Verifier on one partition."""
 
 import argparse
+import math
 import sys
 import tempfile
 import time
@@ -25,6 +26,7 @@ from meridian.bench.score_fix import score as score_fix
 from meridian.bench.score_root_cause import score as score_root_cause
 from meridian.config import MeridianConfigError, Settings, get_settings
 from meridian.contracts.fault_type import FaultType
+from meridian.contracts.incident_case import attempt_history
 from meridian.contracts.injected_fault import InjectedFault
 from meridian.contracts.partition_metadata import PartitionMetadata
 from meridian.contracts.partition_ref import PartitionRef
@@ -33,6 +35,7 @@ from meridian.graph.build import build_graph
 from meridian.injector.events import build_events, require_causal_event, write_events
 from meridian.injector.faults import INJECTORS
 from meridian.llm.capabilities import apply_methods, format_table, plan_nodes
+from meridian.llm.resident import budget_problem, read_ollama_sizes, size_report
 from meridian.llm.router import build_prepared
 from meridian.mcp_servers.client import StdioSession
 from meridian.pipeline.catalog import DATASETS, DEFAULT_ROWS
@@ -69,6 +72,12 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 2
     if args.live:
+        sizes = read_ollama_sizes()
+        print(size_report(settings, sizes), file=sys.stderr)
+        problem = budget_problem(settings, sizes)
+        if problem is not None:
+            print(problem, file=sys.stderr)
+            return 1
         blocked = _capabilities(settings, chats)
         if blocked is not None:
             print(blocked, file=sys.stderr)
@@ -252,6 +261,7 @@ def _report(
         usd = "0.00" if call.provider not in {"anthropic", "xai"} else "paid"
         by_node.setdefault(call.node, []).append(
             f"provider={call.provider} model={call.model} fallback_used={call.fallback_used} "
+            f"temperature={call.temperature} seed={call.seed} "
             f"input_tokens={call.input_tokens} output_tokens={call.output_tokens} "
             f"prompt_tokens_before={call.prompt_tokens_before} "
             f"prompt_tokens_after={call.prompt_tokens_after} usd={usd}"
@@ -298,6 +308,9 @@ def _report(
                 "dry_run "
                 f"rows_changed={case.dry_run.rows_changed} "
                 f"rows_changed_outside={case.dry_run.rows_changed_outside} "
+                f"rows_fixed={case.dry_run.rows_fixed} "
+                f"rows_still_failing={case.dry_run.rows_still_failing} "
+                f"no_op={case.dry_run.no_op} "
                 f"over_broad={case.dry_run.over_broad} "
                 f"contracts_after={case.dry_run.contracts_after} "
                 f"psi_after={case.dry_run.psi_after}"
@@ -305,9 +318,42 @@ def _report(
         for verdict in case.verdicts:
             lines.append(
                 f"verdict round={verdict.round} approved={verdict.approved} "
-                f"critic_degraded={verdict.critic_degraded} "
+                f"critic_degraded={verdict.critic_degraded} corrective={verdict.corrective} "
                 f"objections={[item.kind.value for item in verdict.objections]}"
             )
+        corrective = 0
+        for index, attempt in enumerate(attempt_history(case), start=1):
+            if attempt.dry_run is None:
+                dry = "dry_run=None"
+            else:
+                report = attempt.dry_run
+                dry = (
+                    "dry_run "
+                    f"rows_fixed={report.rows_fixed} "
+                    f"rows_still_failing={report.rows_still_failing} "
+                    f"rows_changed_outside={report.rows_changed_outside} "
+                    f"over_broad={report.over_broad} no_op={report.no_op} "
+                    f"psi_after={report.psi_after or '-'}"
+                )
+            lines.append(f"attempt {index} kind={attempt.patch.remediation_kind.value} {dry}")
+            for verdict in attempt.verdicts:
+                if verdict.corrective:
+                    corrective += 1
+                objections = [item.kind.value for item in verdict.objections]
+                lines.append(
+                    f"  verdict round={verdict.round} approved={verdict.approved} "
+                    f"critic_degraded={verdict.critic_degraded} corrective={verdict.corrective} "
+                    f"objections={objections}"
+                )
+            if attempt.verification is None:
+                lines.append("  verification=None")
+            else:
+                checks = ",".join(
+                    f"{item.name}:{'pass' if item.passed else 'fail'}"
+                    for item in attempt.verification.checks
+                )
+                lines.append(f"  verification passed={attempt.verification.passed} checks={checks}")
+        lines.append(f"critic_corrective_retries={corrective}")
         if case.verification is not None:
             checks = ",".join(
                 f"{item.name}:{'pass' if item.passed else 'fail'}"
@@ -335,7 +381,35 @@ def _report(
     outgoing = sum(call.output_tokens for call in state.llm_calls)
     lines.append(f"tokens input={incoming} output={outgoing}")
     lines.append(f"wall_s={wall_s:.2f}")
+    lines.extend(_latency_lines(state))
     return "\n".join(lines)
+
+
+def _latency_lines(state: MeridianState) -> list[str]:
+    grouped: dict[str, list[int]] = {}
+    for call in state.llm_calls:
+        if call.timed_out:
+            continue
+        grouped.setdefault(call.node, []).append(call.latency_ms)
+    lines = [
+        f"latency_ms {node} p50={_percentile(values, 50)} p95={_percentile(values, 95)}"
+        for node, values in grouped.items()
+    ]
+    reload_s = sum(call.load_duration_ms for call in state.llm_calls) / 1000
+    timeouts = sum(1 for call in state.llm_calls if call.timed_out)
+    lines.append(f"reload_s={reload_s:.3f}")
+    lines.append(f"timeouts={timeouts}")
+    if state.abort_reason == "WALL_BUDGET":
+        lines.append("abort=WALL_BUDGET")
+    return lines
+
+
+def _percentile(values: list[int], rank: int) -> int:
+    ordered = sorted(values)
+    if not ordered:
+        return 0
+    index = max(math.ceil(rank / 100 * len(ordered)) - 1, 0)
+    return ordered[min(index, len(ordered) - 1)]
 
 
 def _invoke(
@@ -344,38 +418,45 @@ def _invoke(
     ref: PartitionRef,
     evidence_root: Path,
 ) -> MeridianState:
+    import ray
+
     checkpoint = Path(settings.checkpoint_path)
     checkpoint.parent.mkdir(parents=True, exist_ok=True)
-    with (
-        shared_ray(settings.ray_num_cpus),
-        StdioSession(evidence_root) as session,
-        SqliteSaver.from_conn_string(str(checkpoint)) as saver,
-    ):
-        graph = build_graph(
-            num_cpus=settings.ray_num_cpus,
-            model_name=chats.triage_model,
-            chat=chats.triage_chat,
-            checkpointer=saver,
-            root_model_name=chats.root_model,
-            root_chat=chats.root_chat,
-            evidence_root=evidence_root,
-            tools=session.tools,
-            max_tool_calls=settings.rootcause_max_tool_calls,
-            fix_model_name=chats.fix_model,
-            fix_chat=chats.fix_chat,
-            critic_model_name=chats.critic_model,
-            critic_chat=chats.critic_chat,
-            sandbox_timeout_s=settings.sandbox_timeout_s,
-            sandbox_memory_mb=settings.sandbox_memory_mb,
-            max_row_loss=settings.max_row_loss,
-            max_quarantine=settings.max_quarantine,
-        )
-        run_id = uuid4()
-        result = graph.invoke(
-            MeridianState(run_id=run_id, partitions=[ref]),
-            {"configurable": {"thread_id": str(run_id)}},
-        )
-    return MeridianState.model_validate(result)
+    try:
+        with (
+            shared_ray(settings.ray_num_cpus),
+            StdioSession(evidence_root) as session,
+            SqliteSaver.from_conn_string(str(checkpoint)) as saver,
+        ):
+            graph = build_graph(
+                num_cpus=settings.ray_num_cpus,
+                model_name=chats.triage_model,
+                chat=chats.triage_chat,
+                checkpointer=saver,
+                root_model_name=chats.root_model,
+                root_chat=chats.root_chat,
+                evidence_root=evidence_root,
+                tools=session.tools,
+                max_tool_calls=settings.rootcause_max_tool_calls,
+                fix_model_name=chats.fix_model,
+                fix_chat=chats.fix_chat,
+                critic_model_name=chats.critic_model,
+                critic_chat=chats.critic_chat,
+                sandbox_timeout_s=settings.sandbox_timeout_s,
+                sandbox_memory_mb=settings.sandbox_memory_mb,
+                max_row_loss=settings.max_row_loss,
+                max_quarantine=settings.max_quarantine,
+                sample_seed=settings.llm_seed,
+                wall_budget_s=settings.run_wall_budget_s,
+            )
+            run_id = uuid4()
+            result = graph.invoke(
+                MeridianState(run_id=run_id, partitions=[ref]),
+                {"configurable": {"thread_id": str(run_id)}},
+            )
+        return MeridianState.model_validate(result)
+    finally:
+        ray.shutdown()
 
 
 if __name__ == "__main__":

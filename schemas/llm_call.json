@@ -8,6 +8,12 @@
       "title": "Attempt",
       "type": "integer"
     },
+    "corrective": {
+      "default": false,
+      "description": "True when this call is the one corrective retry after a prose reply.",
+      "title": "Corrective",
+      "type": "boolean"
+    },
     "fallback_used": {
       "default": false,
       "description": "True when an earlier hop in the node's chain failed over.",
@@ -24,6 +30,13 @@
       "description": "Wall time of the attempt, in milliseconds.",
       "minimum": 0,
       "title": "Latency Ms",
+      "type": "integer"
+    },
+    "load_duration_ms": {
+      "default": 0,
+      "description": "Ollama load_duration for this attempt, in milliseconds. Zero when unreported.",
+      "minimum": 0,
+      "title": "Load Duration Ms",
       "type": "integer"
     },
     "model": {
@@ -67,6 +80,12 @@
       "title": "Provider",
       "type": "string"
     },
+    "seed": {
+      "default": 42,
+      "description": "Sampling seed sent with the call.",
+      "title": "Seed",
+      "type": "integer"
+    },
     "structured": {
       "default": false,
       "description": "True when this attempt asked the model to submit the node contract.",
@@ -76,6 +95,18 @@
     "succeeded": {
       "description": "True when structured output validated.",
       "title": "Succeeded",
+      "type": "boolean"
+    },
+    "temperature": {
+      "default": 0,
+      "description": "Sampling temperature sent with the call.",
+      "title": "Temperature",
+      "type": "number"
+    },
+    "timed_out": {
+      "default": false,
+      "description": "True when this attempt hit the per-call timeout.",
+      "title": "Timed Out",
       "type": "boolean"
     }
   },

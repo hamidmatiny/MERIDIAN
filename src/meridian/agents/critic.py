@@ -15,8 +15,8 @@ from meridian.contracts.verdict import Verdict
 from meridian.graph.limits import objection, record_verdict
 from meridian.llm.errors import RunAborted, call_model
 from meridian.llm.prompt_size import estimate_tokens, incident_json, tagged_human
-from meridian.llm.submit import output_method_of, run_submit_only
-from meridian.llm.usage import make_llm_call
+from meridian.llm.submit import CRITIC_CORRECTIVE, output_method_of, run_submit_only
+from meridian.llm.usage import assemble_calls
 from meridian.prompts import CRITIC_PROMPT_NAME, CRITIC_PROMPT_VERSION, load_prompt
 
 NODE = "critic"
@@ -93,17 +93,20 @@ def run_critic(
                 node=NODE,
                 model_name=model_name,
                 prompt_version=prompt_version,
+                text_retry=CRITIC_CORRECTIVE,
             )
         except RunAborted as exc:
             return {"aborted": True, "abort_reason": str(exc)}
         draft = parsed if isinstance(parsed, VerdictDraft) else None
         over_broad = case.dry_run is not None and case.dry_run.over_broad
         verdict = _verdict(draft, case.patch.id, model_name, case.critic_rounds + 1, over_broad)
+        if any(item.corrective for item in calls):
+            verdict = verdict.model_copy(update={"corrective": True})
         updated = record_verdict(case, verdict)
         return {"cases": {key: updated}, "llm_calls": calls}
     structured = bind_structured(chat, VerdictDraft)
     try:
-        draft, call = _invoke(
+        draft, batch = _invoke(
             structured,
             [tagged_human(sent, before=estimate_tokens(uncut), after=estimate_tokens(sent))],
             model_name,
@@ -114,7 +117,7 @@ def run_critic(
     over_broad = case.dry_run is not None and case.dry_run.over_broad
     verdict = _verdict(draft, case.patch.id, model_name, case.critic_rounds + 1, over_broad)
     updated = record_verdict(case, verdict)
-    return {"cases": {key: updated}, "llm_calls": [call]}
+    return {"cases": {key: updated}, "llm_calls": batch}
 
 
 def _verdict(
@@ -181,12 +184,12 @@ def _invoke(
     messages: list[BaseMessage],
     model_name: str,
     prompt_version: str,
-) -> tuple[VerdictDraft | None, LLMCall]:
+) -> tuple[VerdictDraft | None, list[LLMCall]]:
     started = time.perf_counter()
     result, tokens_before, tokens_after = call_model(bound, messages)
     draft = _draft_from(result)
     raw = result.get("raw") if isinstance(result, dict) else result
-    call = make_llm_call(
+    batch = assemble_calls(
         node=NODE,
         model=model_name,
         prompt_version=prompt_version,
@@ -199,7 +202,7 @@ def _invoke(
         tokens_after=tokens_after,
         structured=True,
     )
-    return draft, call
+    return draft, batch
 
 
 def _draft_from(result: object) -> VerdictDraft | None:

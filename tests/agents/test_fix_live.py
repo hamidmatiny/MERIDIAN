@@ -11,6 +11,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from tests.agents.support import write_partition
 
 from meridian.agents.fake_llm import FakeTriageModel
+from meridian.agents.ray_runtime import shared_ray
 from meridian.bench.score_fix import score
 from meridian.contracts.fault_type import FaultType
 from meridian.contracts.remediation import RemediationKind
@@ -30,6 +31,11 @@ def _live(tmp_path: Path, dataset: str, fault: FaultType) -> None:
     from meridian.llm.errors import AbortGate
 
     settings = get_settings()
+    from meridian.llm.resident import budget_problem, read_ollama_sizes
+
+    problem = budget_problem(settings, read_ollama_sizes())
+    if problem is not None:
+        pytest.fail(problem)
     for node in ("rootcause", "fix", "critic"):
         provider = getattr(settings, f"{node}_provider")
         if provider in {"anthropic", "xai"} and not settings.allow_paid:
@@ -76,31 +82,41 @@ def _live(tmp_path: Path, dataset: str, fault: FaultType) -> None:
         intensity=0.1,
     )
     write_events(tmp_path / "events.jsonl", events)
+    import ray
+
     run_id = uuid4()
-    with SqliteSaver.from_conn_string(str(tmp_path / "ckpt.sqlite")) as saver:
-        graph = build_graph(
-            num_cpus=settings.ray_num_cpus,
-            model_name="fake-triage",
-            chat=FakeTriageModel(),
-            checkpointer=saver,
-            root_model_name=root_model,
-            root_chat=root_chat,
-            evidence_root=tmp_path,
-            tools=inprocess_tools(tmp_path),
-            max_tool_calls=settings.rootcause_max_tool_calls,
-            fix_model_name=fix_model,
-            fix_chat=fix_chat,
-            critic_model_name=critic_model,
-            critic_chat=critic_chat,
-            sandbox_timeout_s=settings.sandbox_timeout_s,
-            sandbox_memory_mb=settings.sandbox_memory_mb,
-            max_row_loss=settings.max_row_loss,
-            max_quarantine=settings.max_quarantine,
-        )
-        finished = graph.invoke(
-            MeridianState(run_id=run_id, partitions=[ref]),
-            {"configurable": {"thread_id": str(run_id)}, "recursion_limit": 40},
-        )
+    try:
+        with (
+            shared_ray(settings.ray_num_cpus),
+            SqliteSaver.from_conn_string(str(tmp_path / "ckpt.sqlite")) as saver,
+        ):
+            graph = build_graph(
+                num_cpus=settings.ray_num_cpus,
+                model_name="fake-triage",
+                chat=FakeTriageModel(),
+                checkpointer=saver,
+                root_model_name=root_model,
+                root_chat=root_chat,
+                evidence_root=tmp_path,
+                tools=inprocess_tools(tmp_path),
+                max_tool_calls=settings.rootcause_max_tool_calls,
+                fix_model_name=fix_model,
+                fix_chat=fix_chat,
+                critic_model_name=critic_model,
+                critic_chat=critic_chat,
+                sandbox_timeout_s=settings.sandbox_timeout_s,
+                sandbox_memory_mb=settings.sandbox_memory_mb,
+                max_row_loss=settings.max_row_loss,
+                max_quarantine=settings.max_quarantine,
+                sample_seed=settings.llm_seed,
+                wall_budget_s=settings.run_wall_budget_s,
+            )
+            finished = graph.invoke(
+                MeridianState(run_id=run_id, partitions=[ref]),
+                {"configurable": {"thread_id": str(run_id)}, "recursion_limit": 40},
+            )
+    finally:
+        ray.shutdown()
     state = MeridianState.model_validate(finished)
     case = next(item for item in state.cases.values() if item.incident.fault_type is fault)
     assert case.patch is not None
@@ -133,6 +149,7 @@ def _live(tmp_path: Path, dataset: str, fault: FaultType) -> None:
         assert case.patch.remediation_kind in {
             RemediationKind.QUARANTINE,
             RemediationKind.ESCALATE,
+            RemediationKind.RERUN_UPSTREAM,
         }
 
 

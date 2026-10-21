@@ -13,7 +13,9 @@ from meridian.injector.faults import INJECTORS
 from meridian.sandbox.execute import execute
 
 _APPROPRIATE: dict[FaultType, frozenset[RemediationKind]] = {
-    FaultType.NULL_EXPLOSION: frozenset({RemediationKind.QUARANTINE, RemediationKind.ESCALATE}),
+    FaultType.NULL_EXPLOSION: frozenset(
+        {RemediationKind.QUARANTINE, RemediationKind.ESCALATE, RemediationKind.RERUN_UPSTREAM}
+    ),
     FaultType.LATE_PARTITION: frozenset({RemediationKind.RERUN_UPSTREAM, RemediationKind.ESCALATE}),
     FaultType.UNIT_MISMATCH: frozenset({RemediationKind.DATA_REPAIR}),
     FaultType.SCHEMA_DRIFT: frozenset({RemediationKind.DATA_REPAIR, RemediationKind.ESCALATE}),

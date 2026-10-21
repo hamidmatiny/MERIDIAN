@@ -55,6 +55,12 @@ def unwrap_abort(exc: BaseException) -> RunAborted | None:
     return None
 
 
+def is_timeout(exc: BaseException) -> bool:
+    """A provider timeout is transient and gets one retry before the next hop."""
+    text = f"{type(exc).__name__} {exc}".lower()
+    return "timeout" in text or "timed out" in text
+
+
 def classify(exc: BaseException) -> ProviderFailure:
     """Map a provider exception onto the circuit-breaker classes."""
     status = _status(exc)

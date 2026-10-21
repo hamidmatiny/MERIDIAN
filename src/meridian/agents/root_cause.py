@@ -28,7 +28,7 @@ from meridian.contracts.tool_call import ToolCall
 from meridian.llm.errors import RunAborted, call_model, unwrap_abort
 from meridian.llm.prompt_size import estimate_tokens, incident_json, tagged_human
 from meridian.llm.submit import output_method_of, run_submit_only, run_tool_loop
-from meridian.llm.usage import make_llm_call
+from meridian.llm.usage import assemble_calls
 from meridian.mcp_servers.client import invoke_tool
 from meridian.mcp_servers.impl import publish_incident
 from meridian.prompts import ROOT_CAUSE_PROMPT_NAME, ROOT_CAUSE_PROMPT_VERSION, load_prompt
@@ -294,14 +294,15 @@ def _compile_loop(
     def plan(state: LoopState) -> dict[str, object]:
         if state.steps >= max_tool_calls:
             return _force_answer(state, chat, model_name, prompt_version)
-        response, call = _invoke_model(
+        response, batch = _invoke_model(
             bound,
             _messages(state.turns),
             state,
             model_name,
             prompt_version,
         )
-        calls = [*state.llm_calls, call]
+        call = batch[-1]
+        calls = [*state.llm_calls, *batch]
         requested = _first_tool_call(response) if call.succeeded else None
         if requested is None:
             return _force_answer(state, chat, model_name, prompt_version, prior=calls)
@@ -349,7 +350,7 @@ def _force_answer(
     if output_method_of(chat) == "json_mode":
         return _json_answer(state, chat, model_name, prompt_version, prior)
     structured = bind_structured(chat, RootCauseDraft)
-    parsed, causal_raw, call = _invoke_structured(
+    parsed, causal_raw, batch = _invoke_structured(
         structured,
         _messages(state.turns),
         state.incident_id,
@@ -357,7 +358,7 @@ def _force_answer(
         prompt_version,
         attempt=(len(prior) if prior is not None else len(state.llm_calls)) + 1,
     )
-    calls = [*(prior if prior is not None else state.llm_calls), call]
+    calls = [*(prior if prior is not None else state.llm_calls), *batch]
     if parsed is None:
         return {
             "hypothesis": _fallback(state.incident_id, prompt_version),
@@ -420,7 +421,7 @@ def _invoke_model(
     state: LoopState,
     model_name: str,
     prompt_version: str,
-) -> tuple[object, LLMCall]:
+) -> tuple[object, list[LLMCall]]:
     started = time.perf_counter()
     response, tokens_before, tokens_after = call_model(bound, messages)
     succeeded = response is not None
@@ -517,7 +518,7 @@ def _invoke_structured(
     model_name: str,
     prompt_version: str,
     attempt: int,
-) -> tuple[Hypothesis | None, str, LLMCall]:
+) -> tuple[Hypothesis | None, str, list[LLMCall]]:
     started = time.perf_counter()
     result, tokens_before, tokens_after = call_model(bound, messages)
     draft = _draft_from(result)
@@ -660,9 +661,9 @@ def _call_record(
     tokens_before: int,
     tokens_after: int,
     structured: bool = False,
-) -> LLMCall:
+) -> list[LLMCall]:
     message = raw.get("raw") if isinstance(raw, dict) else raw
-    return make_llm_call(
+    return assemble_calls(
         node=NODE,
         model=model_name,
         prompt_version=prompt_version,

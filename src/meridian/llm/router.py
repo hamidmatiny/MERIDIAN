@@ -12,9 +12,9 @@ from pydantic import SecretStr
 
 from meridian.config import MeridianConfigError, Settings
 from meridian.llm.budget import PAID, Budget, BudgetError, open_budget
-from meridian.llm.errors import AbortGate, ProviderFailure, RunAborted, classify
+from meridian.llm.errors import AbortGate, ProviderFailure, RunAborted, classify, is_timeout
 from meridian.llm.prompt_size import estimate_tokens
-from meridian.llm.usage import read_usage
+from meridian.llm.usage import TimeoutNote, read_usage
 
 _PROVIDERS = frozenset({"ollama", "omniroute", "anthropic", "xai", "fake"})
 _NODES = ("triage", "rootcause", "fix", "critic")
@@ -41,6 +41,9 @@ class FallbackChat:
         gate: AbortGate,
         sleeper: Callable[[float], None] | None = None,
         backoff_s: float = 0.05,
+        temperature: float = 0,
+        seed: int = 42,
+        deadline: float | None = None,
     ) -> None:
         if not hops:
             raise MeridianConfigError("LLM", ["a provider chain"])
@@ -55,6 +58,12 @@ class FallbackChat:
         self.abort_gate = gate
         self.hop_methods: list[str | None] = [None for _hop in hops]
         self.output_method: str | None = None
+        self.temperature = temperature
+        self.seed = seed
+        self.deadline = deadline
+        self.timeouts: list[TimeoutNote] = []
+        self.last_latency_ms = 0
+        self.last_load_ms = 0
 
     def bind_tools(self, tools: list[Any], **kwargs: Any) -> "FallbackBound":
         return FallbackBound(self, lambda hop: hop.client.bind_tools(tools, **kwargs))
@@ -75,6 +84,9 @@ class FallbackChat:
         for index, hop in enumerate(self.hops):
             for attempt in range(3):
                 self.gate.check()
+                if self.deadline is not None and _now() >= self.deadline:
+                    raise RunAborted("WALL_BUDGET", "run wall budget exceeded")
+                started = _now()
                 try:
                     self.budget.preflight(hop.provider, hop.model, _estimate(messages))
                     result = action(hop)
@@ -93,6 +105,13 @@ class FallbackChat:
                         self.gate.trip(f"{kind.value}: {exc}")
                         raise RunAborted(kind.value, str(exc)) from exc
                     last = exc
+                    if is_timeout(exc):
+                        elapsed = int(max(_now() - started, 0) * 1000)
+                        self.timeouts.append(TimeoutNote(hop.provider, hop.model, elapsed))
+                        if attempt < 1:
+                            self.sleeper(self.backoff_s * (attempt + 1))
+                            continue
+                        break
                     if kind is ProviderFailure.UNSUPPORTED:
                         unsupported = exc
                         break
@@ -101,6 +120,8 @@ class FallbackChat:
                         continue
                     break
                 else:
+                    self.last_latency_ms = int(max(_now() - started, 0) * 1000)
+                    self.last_load_ms = _load_ms(result)
                     self._account(hop, result, index)
                     return result
         if unsupported is not None:
@@ -133,6 +154,8 @@ class FallbackBound:
         self.active_model = parent.active_model
         self.fallback_used = parent.fallback_used
         self.abort_gate = parent.gate
+        self.temperature = parent.temperature
+        self.seed = parent.seed
 
     def invoke(self, messages: Any, **kwargs: Any) -> Any:
         del kwargs
@@ -164,6 +187,7 @@ def resolve_chain(
     fallback: str,
     *,
     allow_paid: bool,
+    omniroute_model: str | None = None,
 ) -> list[tuple[str, str]]:
     """Ordered hops. Paid providers are skipped unless the run explicitly allows them."""
     primary = provider.strip().lower()
@@ -180,7 +204,10 @@ def resolve_chain(
             raise MeridianConfigError("LLM", [f"unknown provider {name}"])
         if name in PAID and not allow_paid:
             continue
-        chosen = explicit_model(model) if name == "omniroute" else model.strip()
+        if name == "omniroute":
+            chosen = explicit_model(omniroute_model if omniroute_model else model)
+        else:
+            chosen = model.strip()
         if chosen == "":
             raise MeridianConfigError("LLM", ["model id"])
         hops.append((name, chosen))
@@ -205,12 +232,26 @@ def build_node_chat(
     fallback = _fallback(settings, node)
     if model is None:
         raise MeridianConfigError("LLM", [f"MERIDIAN_{node.upper()}_MODEL"])
-    hops = resolve_chain(provider, model, fallback, allow_paid=settings.allow_paid)
+    hops = resolve_chain(
+        provider,
+        model,
+        fallback,
+        allow_paid=settings.allow_paid,
+        omniroute_model=_omniroute_model(settings, node),
+    )
     _require_paid(settings, hops)
     shared_gate = AbortGate() if gate is None else gate
     shared_budget = _budget(settings) if budget is None else budget
     clients = [Hop(name, chosen, _client(settings, name, chosen, node)) for name, chosen in hops]
-    chat = FallbackChat(clients, budget=shared_budget, gate=shared_gate, sleeper=sleeper)
+    chat = FallbackChat(
+        clients,
+        budget=shared_budget,
+        gate=shared_gate,
+        sleeper=sleeper,
+        temperature=0,
+        seed=settings.llm_seed,
+        deadline=_now() + settings.run_wall_budget_s,
+    )
     return chat, hops[0][1]
 
 
@@ -237,6 +278,13 @@ def _model(settings: Settings, node: str) -> str | None:
     if not isinstance(value, str) or value.strip() == "":
         return None
     return value.strip()
+
+
+def _omniroute_model(settings: Settings, node: str) -> str | None:
+    value = getattr(settings, f"{node}_omniroute_model", None)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
 
 
 def _fallback(settings: Settings, node: str) -> str:
@@ -283,14 +331,36 @@ def _client(settings: Settings, provider: str, model: str, node: str) -> Any:
     if provider == "ollama":
         from langchain_ollama import ChatOllama
 
-        return ChatOllama(model=model, base_url=settings.ollama_base_url)
+        resident = {settings.fix_model, settings.critic_model}
+        options: dict[str, Any] = {
+            "model": model,
+            "base_url": settings.ollama_base_url,
+            "temperature": 0,
+            "seed": settings.llm_seed,
+            "num_ctx": settings.llm_num_ctx,
+            "num_predict": settings.llm_max_output_tokens,
+            "client_kwargs": {"timeout": settings.llm_timeout_s},
+        }
+        if model in resident:
+            options["keep_alive"] = int(settings.run_wall_budget_s)
+        return ChatOllama(**options)
     if provider == "omniroute":
         from langchain_openai import ChatOpenAI
 
+        secret = settings.omniroute_api_key
+        # The OpenAI client rejects an empty key and would otherwise read OPENAI_API_KEY.
+        if secret is None or secret.get_secret_value().strip() == "":
+            key = SecretStr("missing")
+        else:
+            key = secret
         return ChatOpenAI(
             model_name=explicit_model(model),
             openai_api_base=settings.omniroute_base_url,
-            openai_api_key=SecretStr("omniroute"),
+            openai_api_key=key,
+            temperature=0,
+            seed=settings.llm_seed,
+            max_tokens=settings.llm_max_output_tokens,
+            request_timeout=settings.llm_timeout_s,
         )
     if provider == "anthropic":
         from meridian.agents.live_llm import build_live_chat
@@ -336,3 +406,22 @@ def _sleep(seconds: float) -> None:
     import time
 
     time.sleep(seconds)
+
+
+def _now() -> float:
+    import time
+
+    return time.monotonic()
+
+
+def _load_ms(result: object) -> int:
+    meta = getattr(result, "response_metadata", None)
+    if isinstance(result, dict):
+        nested = result.get("response_metadata")
+        meta = nested if isinstance(nested, dict) else result
+    if not isinstance(meta, dict):
+        return 0
+    value = meta.get("load_duration")
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return max(value // 1_000_000, 0)

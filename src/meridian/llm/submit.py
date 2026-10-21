@@ -6,6 +6,7 @@ This module is the submit-tool and JSON-mode path.
 
 import hashlib
 import json
+from collections.abc import Callable
 from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
@@ -15,10 +16,11 @@ from pydantic import BaseModel, ValidationError
 from meridian.contracts.llm_call import LLMCall
 from meridian.contracts.tool_call import ToolCall
 from meridian.llm.errors import call_model
-from meridian.llm.usage import make_llm_call
+from meridian.llm.usage import assemble_calls
 
 _SUBMIT_NOW = "submit now"
 _TEXT_RETRY = "Call the submit tool. Do not reply with plain text."
+CRITIC_CORRECTIVE = "call submit_verdict with your decision"
 _VALIDATION_RETRIES = 2
 
 
@@ -53,6 +55,7 @@ def run_submit_only(
     node: str,
     model_name: str,
     prompt_version: str,
+    text_retry: str | None = None,
 ) -> tuple[BaseModel | None, list[LLMCall]]:
     """Triage and critic: only the submit tool, with validation and text retries."""
     if output_method_of(chat) == "json_mode":
@@ -69,8 +72,9 @@ def run_submit_only(
     calls: list[LLMCall] = []
     validation_left = _VALIDATION_RETRIES
     text_left = 1
+    pending_corrective = False
     while True:
-        response, call = _invoke(
+        response, batch = _invoke(
             chat,
             [tool],
             pending,
@@ -79,8 +83,11 @@ def run_submit_only(
             prompt_version=prompt_version,
             attempt=len(calls) + 1,
             structured=True,
+            corrective=pending_corrective,
         )
-        calls.append(call)
+        pending_corrective = False
+        calls.extend(batch)
+        call = calls[-1]
         parsed, kind, detail, call_id = _read(response, schema, tool_name)
         if parsed is not None:
             calls[-1] = call.model_copy(update={"succeeded": True})
@@ -91,7 +98,8 @@ def run_submit_only(
             continue
         if kind == "text" and text_left:
             text_left -= 1
-            pending = _with_text_retry(pending, response)
+            pending = _with_text_retry(pending, response, text_retry or _TEXT_RETRY)
+            pending_corrective = text_retry is not None
             continue
         return None, calls
 
@@ -107,6 +115,7 @@ def run_tool_loop(
     model_name: str,
     prompt_version: str,
     max_tool_calls: int,
+    submit_guard: Callable[[BaseModel, list[ToolCall]], str | None] | None = None,
 ) -> tuple[BaseModel | None, list[LLMCall], list[ToolCall], list[str]]:
     """Root cause and fix. The model may submit on any turn. The last turn must."""
     submit = make_submit_tool(tool_name, schema)
@@ -125,7 +134,7 @@ def run_tool_loop(
         if last and not forced:
             pending = [*pending, HumanMessage(content=_SUBMIT_NOW)]
             forced = True
-        response, call = _invoke(
+        response, batch = _invoke(
             chat,
             bound_tools,
             pending,
@@ -135,11 +144,20 @@ def run_tool_loop(
             attempt=len(calls) + 1,
             structured=last,
         )
-        calls.append(call)
+        calls.extend(batch)
+        call = calls[-1]
         parsed, kind, detail, call_id = _read(response, schema, tool_name)
         if parsed is not None:
-            calls[-1] = call.model_copy(update={"succeeded": True, "structured": True})
-            return parsed, calls, records, payloads
+            reason = None if submit_guard is None else submit_guard(parsed, records)
+            if reason is None:
+                calls[-1] = call.model_copy(update={"succeeded": True, "structured": True})
+                return parsed, calls, records, payloads
+            if validation_left:
+                validation_left -= 1
+                calls[-1] = call.model_copy(update={"structured": True})
+                pending = _with_tool_error(pending, response, tool_name, call_id, reason)
+                continue
+            return None, calls, records, payloads
         if kind == "mcp" and not last:
             payload, record = _run_mcp(detail, _args_of(response), by_name, node)
             records.append(record)
@@ -183,7 +201,7 @@ def _json_mode(
         error = ""
         if isinstance(response, dict) and response.get("parsing_error") is not None:
             error = str(response.get("parsing_error"))
-        call = make_llm_call(
+        batch = assemble_calls(
             node=node,
             model=model_name,
             prompt_version=prompt_version,
@@ -196,7 +214,7 @@ def _json_mode(
             tokens_after=after,
             structured=True,
         )
-        calls.append(call)
+        calls.extend(batch)
         if parsed is not None:
             return parsed, calls
         if left == 0:
@@ -215,10 +233,11 @@ def _invoke(
     prompt_version: str,
     attempt: int,
     structured: bool,
-) -> tuple[object, LLMCall]:
+    corrective: bool = False,
+) -> tuple[object, list[LLMCall]]:
     bound = chat.bind_tools(tools)
     response, before, after = call_model(bound, messages)
-    call = make_llm_call(
+    batch = assemble_calls(
         node=node,
         model=model_name,
         prompt_version=prompt_version,
@@ -230,8 +249,9 @@ def _invoke(
         tokens_before=before,
         tokens_after=after,
         structured=structured,
+        corrective=corrective,
     )
-    return response, call
+    return response, batch
 
 
 def _read(
@@ -314,11 +334,15 @@ def _with_tool_result(
     ]
 
 
-def _with_text_retry(messages: list[BaseMessage], response: object) -> list[BaseMessage]:
+def _with_text_retry(
+    messages: list[BaseMessage],
+    response: object,
+    note: str = _TEXT_RETRY,
+) -> list[BaseMessage]:
     return [
         *messages,
         AIMessage(content=_content(response)),
-        HumanMessage(content=_TEXT_RETRY),
+        HumanMessage(content=note),
     ]
 
 

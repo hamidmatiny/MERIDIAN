@@ -2,7 +2,12 @@
 
 from uuid import UUID
 
-from meridian.contracts.incident_case import MAX_CRITIC_ROUNDS, MAX_FIX_ATTEMPTS, IncidentCase
+from meridian.contracts.incident_case import (
+    MAX_CRITIC_ROUNDS,
+    MAX_FIX_ATTEMPTS,
+    Attempt,
+    IncidentCase,
+)
 from meridian.contracts.patch import Patch
 from meridian.contracts.remediation import Objection, ObjectionKind, RemediationKind
 from meridian.contracts.verdict import Verdict
@@ -42,11 +47,29 @@ def route_after_verifier(case: IncidentCase) -> str:
 
 
 def begin_fix(case: IncidentCase) -> IncidentCase:
-    """Count one Fix execution and drop a stale verification."""
+    """Count one Fix execution. Archive the previous attempt before clearing it."""
     if case.fix_attempts >= MAX_FIX_ATTEMPTS:
         raise ValueError("fix attempt cap")
+    attempts = list(case.attempts)
+    if case.patch is not None:
+        used = sum(len(item.verdicts) for item in attempts)
+        attempts.append(
+            Attempt(
+                patch=case.patch,
+                dry_run=case.dry_run,
+                verdicts=list(case.verdicts[used:]),
+                verification=case.verification,
+            )
+        )
     return case.model_copy(
-        update={"fix_attempts": case.fix_attempts + 1, "verification": None},
+        update={
+            "fix_attempts": case.fix_attempts + 1,
+            "verification": None,
+            "dry_run": None,
+            "pre_critic_blocked": False,
+            "pre_critic_note": "",
+            "attempts": attempts,
+        },
     )
 
 

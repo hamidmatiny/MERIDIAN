@@ -84,6 +84,19 @@ def test_local_and_fake_clients_construct(tmp_path: Path) -> None:
     assert name == "qwen3.5:4b"
     assert type(chat.hops[0].client).__name__ == "ChatOllama"
     assert type(chat.hops[1].client).__name__ == "ChatOpenAI"
+    assert chat.temperature == 0
+    assert chat.seed == 42
+    assert chat.hops[0].client.temperature == 0
+    assert chat.hops[0].client.seed == 42
+    assert chat.hops[1].client.temperature == 0
+    assert chat.hops[1].client.seed == 42
+    assert chat.hops[0].client.num_ctx == 8192
+    assert chat.hops[0].client.num_predict == 2048
+    assert chat.hops[0].client.client_kwargs["timeout"] == 180
+    assert chat.hops[0].client.keep_alive == 900
+    assert chat.hops[1].client.max_tokens == 2048
+    assert chat.hops[1].client.request_timeout == 180
+    assert chat.hops[1].client.openai_api_key.get_secret_value() == "missing"
     fake = _settings(
         tmp_path,
         triage_provider="fake",
@@ -109,6 +122,30 @@ def test_local_and_fake_clients_construct(tmp_path: Path) -> None:
     assert type(built[1][0].hops[0].client).__name__ == "HeuristicRootCauseModel"
     assert type(built[2][0].hops[0].client).__name__ == "HeuristicFixModel"
     assert type(built[3][0].hops[0].client).__name__ == "HeuristicCriticModel"
+
+
+def test_both_distinct_models_stay_resident(tmp_path: Path) -> None:
+    settings = _settings(
+        tmp_path,
+        triage_provider="ollama",
+        triage_model="qwen3.5:27b-q4_K_M",
+        triage_fallback="ollama",
+        rootcause_provider="ollama",
+        rootcause_model="qwen3.5:27b-q4_K_M",
+        rootcause_fallback="ollama",
+        fix_provider="ollama",
+        fix_model="qwen3.5:27b-q4_K_M",
+        fix_fallback="ollama",
+        critic_provider="ollama",
+        critic_model="gemma4:12b",
+        critic_fallback="ollama",
+        run_wall_budget_s=900,
+    )
+    resident: dict[str, object] = {}
+    for node in ("triage", "rootcause", "fix", "critic"):
+        chat, name = build_node_chat(settings, node, sleeper=lambda _seconds: None)
+        resident[name] = chat.hops[0].client.keep_alive
+    assert resident == {"qwen3.5:27b-q4_K_M": 900, "gemma4:12b": 900}
 
 
 def test_paid_clients_require_a_price(tmp_path: Path) -> None:

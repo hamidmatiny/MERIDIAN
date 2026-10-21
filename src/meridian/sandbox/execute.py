@@ -14,7 +14,7 @@ import pandas as pd
 from meridian.sandbox.gate import check_source
 
 _ENTRY = {"repair", "quarantine", "check"}
-_WARMED = False
+_WARMED_GENERATION = -1
 
 
 @dataclass(frozen=True)
@@ -136,30 +136,20 @@ def _warm_worker() -> None:
 
 
 def _ensure_ray(num_cpus: int) -> None:
-    """Start Ray once per process. Callers share the cluster instead of restarting it."""
-    import logging
+    """Join the process cluster. A new cluster is warmed once; a shared one is reused."""
     import os
 
     os.environ["RAY_ENABLE_UV_RUN_RUNTIME_ENV"] = "0"
     import ray
 
-    global _WARMED
-    if not ray.is_initialized():
-        from meridian.agents.ray_runtime import prepare_ray_runtime
+    from meridian.agents.ray_runtime import start_ray
 
-        os.environ["RAY_USAGE_STATS_ENABLED"] = "0"
-        ray.init(
-            num_cpus=num_cpus,
-            include_dashboard=False,
-            logging_level=logging.ERROR,
-            ignore_reinit_error=True,
-            runtime_env=prepare_ray_runtime(),
-        )
-        _WARMED = False
-    if _WARMED:
+    global _WARMED_GENERATION
+    generation = start_ray(num_cpus)
+    if generation == _WARMED_GENERATION:
         return
     ray.get(ray.remote(_warm_worker).remote())
-    _WARMED = True
+    _WARMED_GENERATION = generation
 
 
 def _limit_memory(memory_bytes: int) -> None:

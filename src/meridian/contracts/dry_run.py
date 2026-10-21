@@ -18,6 +18,20 @@ class DryRunReport(MeridianModel):
         description="True when the remediation modified rows outside the failing set.",
     )
     contracts_after: int = Field(ge=0, description="Incidents remaining on the sample afterward.")
+    rows_fixed: int = Field(
+        default=0,
+        ge=0,
+        description="Failing rows in the sample that pass after the patch.",
+    )
+    rows_still_failing: int = Field(
+        default=0,
+        ge=0,
+        description="Failing rows in the sample that still fail after the patch.",
+    )
+    no_op: bool = Field(
+        default=False,
+        description="True when a repair or quarantine fixed none of the failing rows.",
+    )
     psi_after: str = Field(
         default="",
         description="PSI result on the sample after the remediation.",

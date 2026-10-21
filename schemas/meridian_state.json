@@ -51,6 +51,52 @@
       "title": "ApprovalOutcome",
       "type": "string"
     },
+    "Attempt": {
+      "additionalProperties": false,
+      "description": "One Fix execution and everything recorded for it.\n\nA later attempt appends another ``Attempt``. It does not replace this one.",
+      "properties": {
+        "dry_run": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DryRunReport"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Dry-run for this attempt. None when the attempt did not reach one."
+        },
+        "patch": {
+          "$ref": "#/$defs/Patch"
+        },
+        "verdicts": {
+          "description": "Critic verdicts recorded for this attempt.",
+          "items": {
+            "$ref": "#/$defs/Verdict"
+          },
+          "title": "Verdicts",
+          "type": "array"
+        },
+        "verification": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VerificationResult"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Verifier result for this attempt. None until the verifier runs."
+        }
+      },
+      "required": [
+        "patch"
+      ],
+      "title": "Attempt",
+      "type": "object"
+    },
     "DryRunReport": {
       "additionalProperties": false,
       "description": "What a 200-row sandbox sample did, measured without a model.",
@@ -66,6 +112,12 @@
           "description": "Extra context for the critic. Empty when unused.",
           "title": "Detail",
           "type": "string"
+        },
+        "no_op": {
+          "default": false,
+          "description": "True when a repair or quarantine fixed none of the failing rows.",
+          "title": "No Op",
+          "type": "boolean"
         },
         "over_broad": {
           "description": "True when the remediation modified rows outside the failing set.",
@@ -90,10 +142,24 @@
           "title": "Rows Changed Outside",
           "type": "integer"
         },
+        "rows_fixed": {
+          "default": 0,
+          "description": "Failing rows in the sample that pass after the patch.",
+          "minimum": 0,
+          "title": "Rows Fixed",
+          "type": "integer"
+        },
         "rows_sampled": {
           "description": "Rows in the dry-run sample.",
           "minimum": 0,
           "title": "Rows Sampled",
+          "type": "integer"
+        },
+        "rows_still_failing": {
+          "default": 0,
+          "description": "Failing rows in the sample that still fail after the patch.",
+          "minimum": 0,
+          "title": "Rows Still Failing",
           "type": "integer"
         }
       },
@@ -394,6 +460,14 @@
           "default": null,
           "description": "Human approval decision, if the gate has completed."
         },
+        "attempts": {
+          "description": "Closed Fix attempts. The open attempt stays on the case fields.",
+          "items": {
+            "$ref": "#/$defs/Attempt"
+          },
+          "title": "Attempts",
+          "type": "array"
+        },
         "critic_rejection_rate": {
           "default": 0.0,
           "description": "Share of critic verdicts on this case that rejected the patch.",
@@ -550,6 +624,12 @@
           "title": "Attempt",
           "type": "integer"
         },
+        "corrective": {
+          "default": false,
+          "description": "True when this call is the one corrective retry after a prose reply.",
+          "title": "Corrective",
+          "type": "boolean"
+        },
         "fallback_used": {
           "default": false,
           "description": "True when an earlier hop in the node's chain failed over.",
@@ -566,6 +646,13 @@
           "description": "Wall time of the attempt, in milliseconds.",
           "minimum": 0,
           "title": "Latency Ms",
+          "type": "integer"
+        },
+        "load_duration_ms": {
+          "default": 0,
+          "description": "Ollama load_duration for this attempt, in milliseconds. Zero when unreported.",
+          "minimum": 0,
+          "title": "Load Duration Ms",
           "type": "integer"
         },
         "model": {
@@ -609,6 +696,12 @@
           "title": "Provider",
           "type": "string"
         },
+        "seed": {
+          "default": 42,
+          "description": "Sampling seed sent with the call.",
+          "title": "Seed",
+          "type": "integer"
+        },
         "structured": {
           "default": false,
           "description": "True when this attempt asked the model to submit the node contract.",
@@ -618,6 +711,18 @@
         "succeeded": {
           "description": "True when structured output validated.",
           "title": "Succeeded",
+          "type": "boolean"
+        },
+        "temperature": {
+          "default": 0,
+          "description": "Sampling temperature sent with the call.",
+          "title": "Temperature",
+          "type": "number"
+        },
+        "timed_out": {
+          "default": false,
+          "description": "True when this attempt hit the per-call timeout.",
+          "title": "Timed Out",
           "type": "boolean"
         }
       },
@@ -1067,6 +1172,12 @@
         "approved": {
           "description": "Whether the reviewer accepts the patch.",
           "title": "Approved",
+          "type": "boolean"
+        },
+        "corrective": {
+          "default": false,
+          "description": "True when a prose reply needed the submit_verdict corrective.",
+          "title": "Corrective",
           "type": "boolean"
         },
         "critic_degraded": {

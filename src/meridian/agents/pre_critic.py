@@ -2,10 +2,13 @@
 
 A syntax or sandbox-gate failure goes back to Fix. It does not spend critic
 tokens and it does not count as a critic round. A passing patch is dry-run on
-a 200-row sample so the critic can see what the code actually changed.
+a seeded sample: every failing row, up to 150, plus random clean rows to 200.
+A repair or quarantine that fixes none of those rows is a NO_OP and returns
+to Fix without a critic round.
 """
 
 import ast
+import random
 from collections import Counter
 
 import pandas as pd
@@ -23,6 +26,7 @@ from meridian.quality.psi import population_stability_index
 from meridian.sandbox.gate import check_source
 
 _SAMPLE = 200
+_FAILING_CAP = 150
 
 
 def run_pre_critic(
@@ -31,6 +35,7 @@ def run_pre_critic(
     num_cpus: int,
     timeout_s: float,
     memory_mb: int,
+    sample_seed: int = 42,
 ) -> dict[str, object]:
     """Gate the patch, then either bounce to Fix or attach a dry-run report."""
     if len(state.cases) != 1:
@@ -66,7 +71,19 @@ def run_pre_critic(
         num_cpus=num_cpus,
         timeout_s=timeout_s,
         memory_mb=memory_mb,
+        sample_seed=sample_seed,
     )
+    if report.no_op:
+        updated = case.model_copy(
+            update={
+                "pre_critic_attempt": case.fix_attempts,
+                "pre_critic_blocked": True,
+                "pre_critic_note": "NO_OP: rows_fixed=0",
+                "dry_run": report,
+                "needs_human": case.needs_human or case.fix_attempts >= MAX_FIX_ATTEMPTS,
+            }
+        )
+        return {"cases": {key: updated}}
     updated = case.model_copy(
         update={
             "pre_critic_attempt": case.fix_attempts,
@@ -106,6 +123,7 @@ def _dry_run(
     num_cpus: int,
     timeout_s: float,
     memory_mb: int,
+    sample_seed: int,
 ) -> DryRunReport:
     _key, case = next(iter(state.cases.items()))
     assert case.patch is not None
@@ -116,7 +134,14 @@ def _dry_run(
     if isinstance(loaded, str):
         return _empty(loaded)
     frame, profile = loaded
-    sample = _sample(frame)
+    sample = _sample(
+        frame,
+        dataset=case.incident.dataset,
+        fault=case.incident.fault_type,
+        metadata=ref.metadata,
+        profile=profile,
+        seed=sample_seed,
+    )
     kind = case.patch.remediation_kind
     from meridian.sandbox.execute import execute
 
@@ -143,17 +168,33 @@ def _dry_run(
     )
 
 
-def _sample(frame: pd.DataFrame) -> pd.DataFrame:
-    if len(frame) <= _SAMPLE:
-        return frame.reset_index(drop=True)
-    step = len(frame) / _SAMPLE
-    chosen: list[int] = []
-    seen: set[int] = set()
-    for offset in range(_SAMPLE):
-        index = min(int(offset * step), len(frame) - 1)
-        if index not in seen:
-            seen.add(index)
-            chosen.append(index)
+def _sample(
+    frame: pd.DataFrame,
+    *,
+    dataset: str,
+    fault: object,
+    metadata: object,
+    profile: ReferenceProfile,
+    seed: int,
+) -> pd.DataFrame:
+    """Keep every failing row up to 150, then seeded clean rows until 200."""
+    from meridian.contracts.fault_type import FaultType
+    from meridian.contracts.partition_metadata import PartitionMetadata
+
+    failing: list[int] = []
+    if isinstance(fault, FaultType) and isinstance(metadata, PartitionMetadata):
+        try:
+            failing = sorted(failure_positions(dataset, frame, metadata, profile, fault))
+        except (ValueError, KeyError):
+            failing = []
+    chosen = failing[:_FAILING_CAP]
+    blocked = set(failing)
+    clean = [index for index in range(len(frame)) if index not in blocked]
+    need = min(_SAMPLE - len(chosen), len(clean))
+    if need > 0:
+        chosen = [*chosen, *random.Random(seed).sample(clean, need)]
+    if not chosen:
+        return frame.iloc[:0].reset_index(drop=True)
     return frame.iloc[chosen].reset_index(drop=True)
 
 
@@ -176,6 +217,16 @@ def _measured(
     failing = failure_positions(dataset, before, metadata, profile, fault)
     changed = _quarantine_changed(before, after) if quarantine else _positional(before, after)
     outside = changed - failing
+    after_failing = failure_positions(dataset, after, metadata, profile, fault)
+    if len(before) == len(after):
+        still = failing & after_failing
+        fixed = failing - after_failing
+    elif quarantine:
+        fixed = failing & changed
+        still = failing - fixed
+    else:
+        fixed = set(range(max(0, len(failing) - len(after_failing))))
+        still = set(range(len(after_failing)))
     contracts = _contracts(dataset, after, metadata, profile)
     return DryRunReport(
         rows_sampled=len(before),
@@ -183,6 +234,9 @@ def _measured(
         rows_changed_outside=len(outside),
         over_broad=bool(outside),
         contracts_after=contracts,
+        rows_fixed=len(fixed),
+        rows_still_failing=len(still),
+        no_op=bool(failing) and len(fixed) == 0,
         psi_after=_psi(after, profile),
         detail=detail,
     )

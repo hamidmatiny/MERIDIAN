@@ -345,3 +345,43 @@ def test_quarantine_and_row_edges(tmp_path: Path) -> None:
         FaultType.LATE_PARTITION,
     )
     assert late == set()
+
+
+def test_a_noop_null_explosion_is_flagged_without_a_critic_round(tmp_path: Path) -> None:
+    ref = write_partition(
+        tmp_path,
+        dataset="fleet_daily_kpi",
+        fault=FaultType.NULL_EXPLOSION,
+        intensity=0.2,
+        seed=4,
+        rows=40,
+        name="nulls",
+    )
+    incident = make_incident().model_copy(
+        update={"dataset": ref.dataset, "fault_type": FaultType.NULL_EXPLOSION}
+    )
+    hypothesis = make_hypothesis(incident_id=incident.id)
+    source = "def repair(df):\n    return df\n"
+    patch = make_patch(incident_id=incident.id, hypothesis_id=hypothesis.id).model_copy(
+        update={
+            "remediation_kind": RemediationKind.DATA_REPAIR,
+            "diff": unified_diff("remediations/x.py", source),
+            "regression_test": "def check(df):\n    return None\n",
+        }
+    )
+    case = IncidentCase(incident=incident, hypothesis=hypothesis, patch=patch, fix_attempts=1)
+    update = run_pre_critic(
+        MeridianState(run_id=uuid4(), partitions=[ref], cases={str(incident.id): case}),
+        num_cpus=1,
+        timeout_s=30,
+        memory_mb=512,
+        sample_seed=4,
+    )
+    updated = update["cases"][str(incident.id)]
+    assert updated.pre_critic_blocked is True
+    assert updated.critic_rounds == 0
+    assert updated.pre_critic_note == "NO_OP: rows_fixed=0"
+    assert updated.dry_run is not None
+    assert updated.dry_run.no_op is True
+    assert updated.dry_run.rows_fixed == 0
+    assert updated.dry_run.rows_still_failing > 0

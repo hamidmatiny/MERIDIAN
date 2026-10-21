@@ -2,12 +2,16 @@
 
 import logging
 import os
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 
 os.environ["RAY_ENABLE_UV_RUN_RUNTIME_ENV"] = "0"
 
 import ray
+
+_LOCK = threading.Lock()
+_GENERATION = 0
 
 
 def prepare_ray_runtime() -> dict[str, dict[str, str]]:
@@ -24,22 +28,46 @@ def prepare_ray_runtime() -> dict[str, dict[str, str]]:
     return {"env_vars": {"RAY_ENABLE_UV_RUN_RUNTIME_ENV": "0"}}
 
 
+def start_ray(num_cpus: int) -> int:
+    """Start one local cluster, or keep the one already running.
+
+    The returned generation changes only when this process actually calls
+    ``ray.init``. Callers use it to tell a new cluster from the one they warmed.
+    """
+    _claim(num_cpus)
+    return _GENERATION
+
+
+def _claim(num_cpus: int) -> bool:
+    """Return True when this call started the cluster."""
+    global _GENERATION
+    if num_cpus < 1:
+        raise ValueError("num_cpus must be >= 1")
+    with _LOCK:
+        if ray.is_initialized():
+            return False
+        os.environ["RAY_USAGE_STATS_ENABLED"] = "0"
+        try:
+            ray.init(
+                num_cpus=num_cpus,
+                include_dashboard=False,
+                logging_level=logging.ERROR,
+                ignore_reinit_error=True,
+                runtime_env=prepare_ray_runtime(),
+            )
+        except AssertionError as exc:
+            # A raced second init finds the driver already connected. Use that cluster.
+            if "ray.init twice" not in str(exc) or not ray.is_initialized():
+                raise
+            return False
+        _GENERATION += 1
+        return True
+
+
 @contextmanager
 def shared_ray(num_cpus: int) -> Iterator[None]:
     """Hold one cluster for a whole run so Sentinel and the sandbox share it."""
-    if num_cpus < 1:
-        raise ValueError("num_cpus must be >= 1")
-    started = False
-    if not ray.is_initialized():
-        os.environ["RAY_USAGE_STATS_ENABLED"] = "0"
-        ray.init(
-            num_cpus=num_cpus,
-            include_dashboard=False,
-            logging_level=logging.ERROR,
-            ignore_reinit_error=True,
-            runtime_env=prepare_ray_runtime(),
-        )
-        started = True
+    started = _claim(num_cpus)
     try:
         yield
     finally:
@@ -53,20 +81,9 @@ def ray_runtime(num_cpus: int) -> Iterator[None]:
 
     If this process already has a cluster, the block uses it and does not shut it down.
     """
-    if num_cpus < 1:
-        raise ValueError("num_cpus must be >= 1")
-    if ray.is_initialized():
-        yield
-        return
-    os.environ["RAY_USAGE_STATS_ENABLED"] = "0"
-    ray.init(
-        num_cpus=num_cpus,
-        include_dashboard=False,
-        logging_level=logging.ERROR,
-        ignore_reinit_error=False,
-        runtime_env=prepare_ray_runtime(),
-    )
+    started = _claim(num_cpus)
     try:
         yield
     finally:
-        ray.shutdown()
+        if started:
+            ray.shutdown()

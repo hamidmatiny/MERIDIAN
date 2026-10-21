@@ -39,3 +39,18 @@ class LLMCall(MeridianModel):
         default=False,
         description="True when this attempt asked the model to submit the node contract.",
     )
+    temperature: float = Field(default=0, description="Sampling temperature sent with the call.")
+    seed: int = Field(default=42, description="Sampling seed sent with the call.")
+    corrective: bool = Field(
+        default=False,
+        description="True when this call is the one corrective retry after a prose reply.",
+    )
+    timed_out: bool = Field(
+        default=False,
+        description="True when this attempt hit the per-call timeout.",
+    )
+    load_duration_ms: int = Field(
+        default=0,
+        ge=0,
+        description="Ollama load_duration for this attempt, in milliseconds. Zero when unreported.",
+    )

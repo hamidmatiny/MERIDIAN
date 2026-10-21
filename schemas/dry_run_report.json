@@ -14,6 +14,12 @@
       "title": "Detail",
       "type": "string"
     },
+    "no_op": {
+      "default": false,
+      "description": "True when a repair or quarantine fixed none of the failing rows.",
+      "title": "No Op",
+      "type": "boolean"
+    },
     "over_broad": {
       "description": "True when the remediation modified rows outside the failing set.",
       "title": "Over Broad",
@@ -37,10 +43,24 @@
       "title": "Rows Changed Outside",
       "type": "integer"
     },
+    "rows_fixed": {
+      "default": 0,
+      "description": "Failing rows in the sample that pass after the patch.",
+      "minimum": 0,
+      "title": "Rows Fixed",
+      "type": "integer"
+    },
     "rows_sampled": {
       "description": "Rows in the dry-run sample.",
       "minimum": 0,
       "title": "Rows Sampled",
+      "type": "integer"
+    },
+    "rows_still_failing": {
+      "default": 0,
+      "description": "Failing rows in the sample that still fail after the patch.",
+      "minimum": 0,
+      "title": "Rows Still Failing",
       "type": "integer"
     }
   },

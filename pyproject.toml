@@ -46,6 +46,7 @@ dev = [
     "pandas-stubs>=3.0.5.260914",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
+    "pytest-timeout>=2.4.0",
     "ruff>=0.17.1",
     "types-pyyaml>=6.0.12.20260906",
 ]
@@ -102,6 +103,8 @@ warn_required_dynamic_aliases = true
 testpaths = ["tests"]
 addopts = ["--strict-markers", "--import-mode=prepend"]
 pythonpath = ["."]
+timeout = 60
+timeout_func_only = true
 markers = ["live: calls the configured free-tier model unless MERIDIAN_ALLOW_PAID=1"]
 
 [tool.coverage.run]

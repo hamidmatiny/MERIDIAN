@@ -115,6 +115,11 @@ def test_live_triage_smoke(tmp_path: Path) -> None:
     from meridian.llm.router import build_node_chat
 
     settings = get_settings()
+    from meridian.llm.resident import budget_problem, read_ollama_sizes
+
+    problem = budget_problem(settings, read_ollama_sizes())
+    if problem is not None:
+        pytest.fail(problem)
     if settings.triage_provider in {"anthropic", "xai"} and not settings.allow_paid:
         pytest.skip("paid provider requires MERIDIAN_ALLOW_PAID=1")
     chat, model_name = build_node_chat(settings, "triage")

@@ -28,6 +28,14 @@ from meridian.llm.errors import AbortGate, RunAborted, unwrap_abort
 from meridian.prompts import TRIAGE_PROMPT_VERSION
 
 logger = logging.getLogger("meridian.graph")
+
+
+def _clock() -> float:
+    import time
+
+    return time.monotonic()
+
+
 ToolLoader = Callable[[], list[BaseTool]]
 
 
@@ -35,21 +43,30 @@ def _guard(
     gate: AbortGate,
     state: object,
     node: Callable[[MeridianState], dict[str, object]],
+    *,
+    over: Callable[[], bool] | None = None,
+    human: Callable[[MeridianState], dict[str, object]] | None = None,
 ) -> dict[str, object]:
     """Skip the model once the run has aborted, and record a fatal provider error."""
-    if gate.reason is not None:
-        return {"aborted": True, "abort_reason": gate.reason}
     current = _as_state(state)
+    if gate.reason is not None:
+        if gate.reason == "WALL_BUDGET" and human is not None:
+            return human(current)
+        return {"aborted": True, "abort_reason": gate.reason}
     if current.aborted:
         reason = current.abort_reason or "aborted"
         gate.trip(reason)
         return {"aborted": True, "abort_reason": reason}
+    if over is not None and over():
+        return _wall(gate, current, human)
     try:
         update = node(current)
     except Exception as exc:
         aborted = exc if isinstance(exc, RunAborted) else unwrap_abort(exc)
         if aborted is None:
             raise
+        if aborted.kind == "WALL_BUDGET":
+            return _wall(gate, current, human)
         gate.trip(str(aborted))
         return {"aborted": True, "abort_reason": str(aborted)}
     raw_reason = update.get("abort_reason")
@@ -57,6 +74,17 @@ def _guard(
         text = raw_reason if isinstance(raw_reason, str) and raw_reason else "aborted"
         gate.trip(text)
     return update
+
+
+def _wall(
+    gate: AbortGate,
+    state: MeridianState,
+    human: Callable[[MeridianState], dict[str, object]] | None,
+) -> dict[str, object]:
+    gate.trip("WALL_BUDGET")
+    if human is not None:
+        return human(state)
+    return {"aborted": True, "abort_reason": "WALL_BUDGET"}
 
 
 def _as_state(state: object) -> MeridianState:
@@ -88,6 +116,8 @@ def build_graph(
     sandbox_memory_mb: int = 512,
     max_row_loss: float = 0.01,
     max_quarantine: float = 0.25,
+    sample_seed: int = 42,
+    wall_budget_s: float = 900,
     detected_at: datetime | None = None,
     interrupt_after: list[str] | None = None,
 ) -> CompiledStateGraph[MeridianState, None, MeridianState, MeridianState]:
@@ -100,6 +130,16 @@ def build_graph(
     chosen_critic = critic_model if critic_chat is None else critic_chat
     chosen_critic_name = critic_model.model_name if critic_model_name is None else critic_model_name
     gate = AbortGate()
+    started = _clock()
+
+    def _over() -> bool:
+        return _clock() - started >= wall_budget_s
+
+    def _human(state: MeridianState) -> dict[str, object]:
+        cases = {
+            key: case.model_copy(update={"needs_human": True}) for key, case in state.cases.items()
+        }
+        return {"aborted": True, "abort_reason": "WALL_BUDGET", "cases": cases}
 
     def sentinel(state: MeridianState) -> dict[str, object]:
         return run_sentinel(state, num_cpus=num_cpus, detected_at=moment)
@@ -114,6 +154,8 @@ def build_graph(
                 chat=chat,
                 prompt_version=TRIAGE_PROMPT_VERSION,
             ),
+            over=_over,
+            human=_human,
         )
 
     def dispatch(state: MeridianState) -> dict[str, object]:
@@ -135,7 +177,7 @@ def build_graph(
                 evidence_root=evidence_root,
             )
 
-        return _guard(gate, state, _run)
+        return _guard(gate, state, _run, over=_over, human=_human)
 
     def fix(state: MeridianState) -> dict[str, object]:
         resolved = list(tools) if tools is not None else []
@@ -153,10 +195,12 @@ def build_graph(
                 max_quarantine=max_quarantine,
             )
 
-        return _guard(gate, state, _run)
+        return _guard(gate, state, _run, over=_over, human=_human)
 
     def pre_critic(state: MeridianState) -> dict[str, object]:
         current = _as_state(state)
+        if _over():
+            return _wall(gate, current, _human)
         if gate.reason is not None or current.aborted:
             reason = gate.reason or current.abort_reason or "aborted"
             gate.trip(reason)
@@ -166,6 +210,7 @@ def build_graph(
             num_cpus=num_cpus,
             timeout_s=sandbox_timeout_s,
             memory_mb=sandbox_memory_mb,
+            sample_seed=sample_seed,
         )
 
     def critic(state: MeridianState) -> dict[str, object]:
@@ -177,11 +222,16 @@ def build_graph(
                 model_name=chosen_critic_name,
                 chat=chosen_critic,
             ),
+            over=_over,
+            human=_human,
         )
 
     def verifier(state: MeridianState) -> dict[str, object]:
+        current = _as_state(state)
+        if _over():
+            return _wall(gate, current, _human)
         return run_verifier(
-            _as_state(state),
+            current,
             num_cpus=num_cpus,
             timeout_s=sandbox_timeout_s,
             memory_mb=sandbox_memory_mb,

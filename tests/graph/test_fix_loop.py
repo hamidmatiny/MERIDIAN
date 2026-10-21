@@ -90,6 +90,45 @@ def _case(state: MeridianState) -> IncidentCase:
     return next(iter(state.cases.values()))
 
 
+def test_a_zero_wall_budget_needs_a_human(tmp_path: Path) -> None:
+    from meridian.contracts.fault_type import FaultType
+
+    ref = write_partition(
+        tmp_path,
+        dataset="vehicle_telemetry",
+        fault=FaultType.SCHEMA_DRIFT,
+        intensity=0.3,
+        seed=3,
+        rows=40,
+        name="wall",
+    )
+    run_id = uuid4()
+    with SqliteSaver.from_conn_string(str(tmp_path / "ckpt.sqlite")) as saver:
+        graph = build_graph(
+            num_cpus=1,
+            model_name="fake-triage",
+            chat=FakeTriageModel(),
+            checkpointer=saver,
+            root_model_name="fake-root-cause",
+            root_chat=FakeRootCauseModel(mode="immediate"),
+            evidence_root=tmp_path,
+            tools=[],
+            fix_chat=ScriptedFixModel([_repair()]),
+            critic_chat=ScriptedCriticModel([True]),
+            sandbox_timeout_s=30,
+            wall_budget_s=0,
+        )
+        finished = graph.invoke(
+            MeridianState(run_id=run_id, partitions=[ref]),
+            {"configurable": {"thread_id": str(run_id)}, "recursion_limit": 40},
+        )
+    state = MeridianState.model_validate(finished)
+    assert state.aborted is True
+    assert state.abort_reason == "WALL_BUDGET"
+    assert state.cases
+    assert all(case.needs_human for case in state.cases.values())
+
+
 def test_approve_path(tmp_path: Path) -> None:
     state = _run(tmp_path, [_repair()], [True])
     case = _case(state)
@@ -146,6 +185,31 @@ def test_static_gate_failure_at_the_fix_cap_needs_a_human(tmp_path: Path) -> Non
     assert "import os" in case.pre_critic_note
     assert case.verification is None
     assert case.needs_human is True
+
+
+def test_approval_on_round_one_is_verified_before_the_next_fix(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from meridian.agents.fix import run_fix as real_fix
+
+    seen: list[object] = []
+
+    def wrapped(state: MeridianState, **kwargs: object) -> dict[str, object]:
+        seen.append(next(iter(state.cases.values())).verification)
+        return real_fix(state, **kwargs)
+
+    monkeypatch.setattr("meridian.graph.build.run_fix", wrapped)
+    state = _run(
+        tmp_path,
+        [_draft(RemediationKind.DATA_REPAIR.value, _NOOP, _CHECK), _repair()],
+        [True, True],
+    )
+    case = _case(state)
+    assert seen[0] is None
+    assert seen[1] is not None
+    assert case.attempts[0].verification is not None
+    assert case.attempts[0].verification.passed is False
 
 
 def test_verifier_failure_then_refix_passes(tmp_path: Path, monkeypatch) -> None:

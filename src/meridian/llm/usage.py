@@ -9,6 +9,16 @@ from typing import Any
 
 from meridian.contracts.llm_call import LLMCall
 
+
+class TimeoutNote:
+    """One timed-out hop. The node records it as an LLMCall."""
+
+    def __init__(self, provider: str, model: str, latency_ms: int) -> None:
+        self.provider = provider
+        self.model = model
+        self.latency_ms = latency_ms
+
+
 _USAGE_KEYS = ("usage", "token_usage", "usage_metadata")
 
 
@@ -47,13 +57,20 @@ def make_llm_call(
     tokens_before: int,
     tokens_after: int,
     structured: bool = False,
+    corrective: bool = False,
 ) -> LLMCall:
     """Build one call record from the response and the bound client."""
     usage = read_usage(raw)
     incoming, outgoing = (0, 0) if usage is None else usage
-    provider = _text(getattr(bound, "provider_name", None), "fake")
-    active = getattr(bound, "active_model", None)
+    owner = _owner(bound)
+    provider = _text(getattr(owner, "provider_name", None), "fake")
+    active = getattr(owner, "active_model", None)
     chosen = active if isinstance(active, str) and active.strip() else model
+    measured = getattr(owner, "last_latency_ms", 0)
+    latency = latency_ms if latency_ms > 0 else _whole(measured)
+    loaded = _load_ms(raw)
+    if loaded == 0:
+        loaded = _whole(getattr(owner, "last_load_ms", 0))
     return LLMCall(
         node=node,
         model=chosen,
@@ -63,12 +80,110 @@ def make_llm_call(
         output_tokens=outgoing,
         prompt_tokens_before=tokens_before,
         prompt_tokens_after=tokens_after,
-        latency_ms=max(latency_ms, 0),
+        latency_ms=max(latency, 0),
         attempt=attempt,
         succeeded=succeeded,
-        fallback_used=bool(getattr(bound, "fallback_used", False)),
+        fallback_used=bool(getattr(owner, "fallback_used", False)),
         structured=structured,
+        temperature=_float(getattr(owner, "temperature", 0.0)),
+        seed=_seed(getattr(owner, "seed", 42)),
+        corrective=corrective,
+        load_duration_ms=loaded,
     )
+
+
+def assemble_calls(
+    *,
+    node: str,
+    model: str,
+    prompt_version: str,
+    raw: object,
+    latency_ms: int,
+    attempt: int,
+    succeeded: bool,
+    bound: object,
+    tokens_before: int,
+    tokens_after: int,
+    structured: bool = False,
+    corrective: bool = False,
+) -> list[LLMCall]:
+    """The timed-out hops that preceded this attempt, then the attempt itself."""
+    owner = _owner(bound)
+    notes = list(getattr(owner, "timeouts", []))
+    if hasattr(owner, "timeouts"):
+        owner.timeouts.clear()
+    number = attempt
+    prior: list[LLMCall] = []
+    for note in notes:
+        if not isinstance(note, TimeoutNote):
+            continue
+        prior.append(
+            LLMCall(
+                node=node,
+                model=note.model,
+                provider=note.provider,
+                prompt_version=prompt_version,
+                input_tokens=0,
+                output_tokens=0,
+                latency_ms=max(note.latency_ms, 0),
+                attempt=number,
+                succeeded=False,
+                structured=structured,
+                temperature=_float(getattr(owner, "temperature", 0.0)),
+                seed=_seed(getattr(owner, "seed", 42)),
+                timed_out=True,
+            )
+        )
+        number += 1
+    primary = make_llm_call(
+        node=node,
+        model=model,
+        prompt_version=prompt_version,
+        raw=raw,
+        latency_ms=latency_ms,
+        attempt=number,
+        succeeded=succeeded,
+        bound=bound,
+        tokens_before=tokens_before,
+        tokens_after=tokens_after,
+        structured=structured,
+        corrective=corrective,
+    )
+    return [*prior, primary]
+
+
+def _owner(bound: object) -> object:
+    parent = getattr(bound, "parent", None)
+    return parent if parent is not None else bound
+
+
+def _load_ms(raw: object) -> int:
+    meta = getattr(raw, "response_metadata", None)
+    if isinstance(raw, dict):
+        nested = raw.get("response_metadata")
+        meta = nested if isinstance(nested, dict) else raw
+    if not isinstance(meta, dict):
+        return 0
+    value = meta.get("load_duration")
+    return _whole(value) // 1_000_000 if _whole(value) else 0
+
+
+def _whole(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return max(value, 0)
+
+
+def _float(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0.0
+    return float(value)
+
+
+def _seed(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 42
+    return value
 
 
 def _collect(found: list[tuple[int, int]], value: object) -> None:

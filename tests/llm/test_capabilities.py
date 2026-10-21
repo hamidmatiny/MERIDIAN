@@ -81,6 +81,140 @@ def test_plan_caches_by_provider_model_and_version(tmp_path: Path) -> None:
     assert "node triage submit_tool,json_schema" in table
 
 
+def test_unreachable_probes_are_not_cached(tmp_path: Path) -> None:
+    calls: list[int] = []
+
+    def probe(provider: str, model: str, version: str, settings: Settings) -> Capability:
+        del settings
+        calls.append(1)
+        return Capability(provider=provider, model=model, ollama_version=version, reachable=False)
+
+    path = tmp_path / "cap.json"
+    local = _settings(
+        triage_fallback="ollama",
+        rootcause_fallback="ollama",
+        fix_fallback="ollama",
+        critic_fallback="ollama",
+    )
+    rows, _methods = plan_nodes(local, cache_path=path, probe=probe, ollama_version="0.40.6")
+    plan_nodes(local, cache_path=path, probe=probe, ollama_version="0.40.6")
+    assert len(calls) == 8
+    assert path.exists() is False
+    assert "UNREACHABLE" in format_table(rows, {"triage": [None]})
+
+
+def test_a_day_old_probe_is_replaced(tmp_path: Path) -> None:
+    path = tmp_path / "cap.json"
+    key = cache_key("ollama", "qwen3.5:4b", "0.40.6")
+    stale = Capability(
+        provider="ollama",
+        model="qwen3.5:4b",
+        ollama_version="0.40.6",
+        tool_calling=True,
+        reachable=True,
+        probed_at="2020-01-01T00:00:00+00:00",
+    )
+    path.write_text(json.dumps({key: stale.model_dump()}), encoding="utf-8")
+    seen: list[str] = []
+
+    def probe(provider: str, model: str, version: str, settings: Settings) -> Capability:
+        del settings
+        seen.append(cache_key(provider, model, version))
+        return Capability(
+            provider=provider,
+            model=model,
+            ollama_version=version,
+            structured_json_mode=True,
+            reachable=True,
+        )
+
+    plan_nodes(
+        _settings(triage_fallback="ollama"),
+        cache_path=path,
+        probe=probe,
+        ollama_version="0.40.6",
+    )
+    assert key in seen
+    plan_nodes(
+        _settings(triage_fallback="ollama"),
+        cache_path=path,
+        probe=probe,
+        ollama_version="9",
+    )
+    assert cache_key("ollama", "qwen3.5:4b", "9") in seen
+
+
+def test_a_401_is_auth_failed_and_is_not_cached(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pydantic import SecretStr
+
+    headers: list[dict[str, str]] = []
+
+    def request(
+        method: str,
+        url: str,
+        payload: dict[str, object] | None,
+        extra: dict[str, str] | None = None,
+    ) -> tuple[int, str]:
+        del method, url, payload
+        headers.append(dict(extra or {}))
+        return 401, "unauthorized"
+
+    monkeypatch.setattr("meridian.llm.capabilities._request", request)
+    settings = _settings(omniroute_api_key=SecretStr("probe-token"))
+    row = _probe_openai(
+        "http://127.0.0.1:9/v1",
+        "omniroute",
+        "gemini/gemini-2.5-flash",
+        "",
+        settings,
+    )
+    assert row.reachable is True
+    assert row.auth_failed is True
+    assert row.tool_calling is False
+    assert method_for(row) is None
+    assert "method=AUTH_FAILED" in format_table([row], {"triage": [None]})
+    assert headers[0].get("Authorization") == "Bearer probe-token"
+    calls: list[int] = []
+
+    def probe(provider: str, model: str, version: str, chosen: Settings) -> Capability:
+        del chosen
+        calls.append(1)
+        return Capability(
+            provider=provider,
+            model=model,
+            ollama_version=version,
+            reachable=True,
+            auth_failed=True,
+        )
+
+    path = tmp_path / "cap.json"
+    local = _settings(
+        triage_fallback="ollama",
+        rootcause_fallback="ollama",
+        fix_fallback="ollama",
+        critic_fallback="ollama",
+    )
+    plan_nodes(local, cache_path=path, probe=probe, ollama_version="0.40.6")
+    plan_nodes(local, cache_path=path, probe=probe, ollama_version="0.40.6")
+    assert len(calls) == 8
+    assert path.exists() is False
+
+
+def test_a_connection_error_is_unreachable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "meridian.llm.capabilities._request",
+        lambda *_args, **_kwargs: (0, "timed out"),
+    )
+    row = _probe_ollama("http://localhost:11434", "qwen3.5:4b", "0.40.6")
+    assert row.reachable is False
+    assert "method=UNREACHABLE" in format_table([row], {"triage": [None]})
+    answered = _probe_openai("http://localhost:9/v1", "omniroute", "m", "")
+    assert answered.reachable is False
+
+
 def test_a_chain_with_no_method_is_named(tmp_path: Path) -> None:
     def probe(provider: str, model: str, version: str, settings: Settings) -> Capability:
         del provider, model, version, settings
@@ -119,8 +253,13 @@ def test_apply_methods_keeps_the_first_usable_hop() -> None:
 
 
 def test_probe_helpers_do_not_open_a_socket(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake(method: str, url: str, payload: dict[str, object] | None) -> tuple[int, str]:
-        del method
+    def fake(
+        method: str,
+        url: str,
+        payload: dict[str, object] | None,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, str]:
+        del method, headers
         if payload is None:
             return 200, '{"version": "0.40.6"}'
         if "tools" in payload:
@@ -168,8 +307,13 @@ def test_live_probe_uses_the_version_and_skips_a_blank_model(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fake(method: str, url: str, payload: dict[str, object] | None) -> tuple[int, str]:
-        del method, url, payload
+    def fake(
+        method: str,
+        url: str,
+        payload: dict[str, object] | None,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, str]:
+        del method, url, payload, headers
         return 200, "{}"
 
     monkeypatch.setattr("meridian.llm.capabilities._request", fake)

@@ -2,7 +2,8 @@
 
 import ast
 
-_ALLOWED = frozenset({"pandas", "numpy", "math", "datetime"})
+from meridian.config import REGRESSION_MODULES, REPAIR_MODULES
+
 _BANNED_MODULES = frozenset({"os", "sys", "subprocess", "socket", "pathlib", "importlib"})
 _BANNED_NAMES = frozenset({"open", "exec", "eval", "compile", "__import__", "__builtins__"})
 
@@ -10,16 +11,15 @@ _BANNED_NAMES = frozenset({"open", "exec", "eval", "compile", "__import__", "__b
 def check_source(source: str, *, allow_pandera: bool = False) -> list[str]:
     """Return rejection reasons. An empty list means the source may run.
 
-    The repair module may import pandas, numpy, math, and datetime. A regression
-    test may also import pandera. Anything else, including dunder access, is rejected.
+    The repair module may import the modules in ``REPAIR_MODULES``. A regression
+    test may import ``REGRESSION_MODULES``, which adds pandera. Anything else,
+    including dunder access, is rejected.
     """
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
         return [f"syntax error: {exc.msg}"]
-    allowed = set(_ALLOWED)
-    if allow_pandera:
-        allowed.add("pandera")
+    allowed = set(REGRESSION_MODULES if allow_pandera else REPAIR_MODULES)
     reasons: list[str] = []
     for node in ast.walk(tree):
         reason = _reason(node, allowed)

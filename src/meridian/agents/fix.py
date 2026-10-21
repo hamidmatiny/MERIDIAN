@@ -30,7 +30,7 @@ from meridian.graph.limits import (
 from meridian.llm.errors import RunAborted, call_model
 from meridian.llm.prompt_size import estimate_tokens, incident_json, tagged_human
 from meridian.llm.submit import output_method_of, run_submit_only, run_tool_loop
-from meridian.llm.usage import make_llm_call
+from meridian.llm.usage import assemble_calls
 from meridian.mcp_servers.client import invoke_tool
 from meridian.prompts import FIX_PROMPT_NAME, FIX_PROMPT_VERSION, load_prompt
 
@@ -120,6 +120,15 @@ def run_fix(
 
 def _feedback(case: IncidentCase) -> str:
     parts: list[str] = []
+    if case.dry_run is not None:
+        report = case.dry_run
+        parts.append(
+            "dry_run "
+            f"rows_changed_outside={report.rows_changed_outside} "
+            f"rows_fixed={report.rows_fixed} "
+            f"over_broad={report.over_broad} "
+            f"psi_after={report.psi_after or '-'}"
+        )
     if case.verdicts:
         latest = case.verdicts[-1]
         if not latest.approved and not latest.critic_degraded:
@@ -163,8 +172,9 @@ def _loop(
     tool_calls: list[ToolCall] = []
     steps = 0
     while steps < max_tool_calls:
-        response, call = _invoke(bound, messages, model_name, prompt_version, len(llm_calls) + 1)
-        llm_calls.append(call)
+        response, batch = _invoke(bound, messages, model_name, prompt_version, len(llm_calls) + 1)
+        llm_calls.extend(batch)
+        call = batch[-1]
         requested = _first_tool_call(response) if call.succeeded else None
         if requested is None:
             break
@@ -192,14 +202,14 @@ def _loop(
         draft = parsed if isinstance(parsed, PatchDraft) else None
         return draft, [*llm_calls, *extra], tool_calls
     structured = bind_structured(chat, PatchDraft)
-    draft, call = _invoke_structured(
+    draft, batch = _invoke_structured(
         structured,
         messages,
         model_name,
         prompt_version,
         len(llm_calls) + 1,
     )
-    llm_calls.append(call)
+    llm_calls.extend(batch)
     return draft, llm_calls, tool_calls
 
 
@@ -225,6 +235,7 @@ def _submit_fix(
         model_name=model_name,
         prompt_version=prompt_version,
         max_tool_calls=max_tool_calls,
+        submit_guard=_require_sample,
     )
     updated: list[ToolCall] = []
     for record, payload in zip(records, payloads, strict=True):
@@ -232,6 +243,16 @@ def _submit_fix(
         updated.append(record.model_copy(update={"ref_count": len(found)}))
     draft = parsed if isinstance(parsed, PatchDraft) else None
     return draft, calls, updated
+
+
+def _require_sample(parsed: object, records: list[ToolCall]) -> str | None:
+    """A DATA_REPAIR in this attempt must follow a sample_failures call."""
+    kind = getattr(parsed, "remediation_kind", "")
+    if kind != RemediationKind.DATA_REPAIR.value:
+        return None
+    if any(record.tool == "sample_failures" for record in records):
+        return None
+    return "DATA_REPAIR requires sample_failures before submit_patch"
 
 
 def _patch(
@@ -296,7 +317,7 @@ def _invoke(
     model_name: str,
     prompt_version: str,
     attempt: int,
-) -> tuple[object, LLMCall]:
+) -> tuple[object, list[LLMCall]]:
     started = time.perf_counter()
     response, tokens_before, tokens_after = call_model(bound, messages)
     succeeded = response is not None
@@ -319,7 +340,7 @@ def _invoke_structured(
     model_name: str,
     prompt_version: str,
     attempt: int,
-) -> tuple[PatchDraft | None, LLMCall]:
+) -> tuple[PatchDraft | None, list[LLMCall]]:
     started = time.perf_counter()
     result, tokens_before, tokens_after = call_model(bound, messages)
     draft = _draft_from(result)
@@ -378,9 +399,9 @@ def _call(
     tokens_before: int,
     tokens_after: int,
     structured: bool = False,
-) -> LLMCall:
+) -> list[LLMCall]:
     message = raw.get("raw") if isinstance(raw, dict) else raw
-    return make_llm_call(
+    return assemble_calls(
         node=NODE,
         model=model_name,
         prompt_version=prompt_version,

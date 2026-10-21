@@ -95,11 +95,43 @@ def test_transient_failure_falls_back_after_two_retries() -> None:
         sleeper=slept.append,
     )
     assert chat.invoke(["hello"]) == "ok"
-    assert first.calls == 3
+    assert first.calls == 2
     assert second.calls == 1
     assert chat.fallback_used is True
     assert chat.provider_name == "omniroute"
+    assert slept == [0.05]
+    assert len(chat.timeouts) == 2
+
+
+def test_http_500_retries_twice_before_the_next_hop() -> None:
+    class _Busy:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def invoke(self, messages: object, **kwargs: object) -> object:
+            del messages, kwargs
+            self.calls += 1
+            error = RuntimeError("unavailable")
+            error.status_code = 500  # type: ignore[attr-defined]
+            raise error
+
+    class _Up:
+        def invoke(self, messages: object, **kwargs: object) -> str:
+            del messages, kwargs
+            return "ok"
+
+    first = _Busy()
+    slept: list[float] = []
+    chat = FallbackChat(
+        [Hop("ollama", "qwen3.5:4b", first), Hop("omniroute", "qwen3.5:4b", _Up())],
+        budget=_budget(Path("/tmp/unused-spend.sqlite")),
+        gate=AbortGate(),
+        sleeper=slept.append,
+    )
+    assert chat.invoke(["hello"]) == "ok"
+    assert first.calls == 3
     assert slept == [0.05, 0.1]
+    assert chat.timeouts == []
 
 
 def test_billing_does_not_call_the_next_provider() -> None:

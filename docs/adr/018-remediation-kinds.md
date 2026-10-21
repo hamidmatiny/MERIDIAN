@@ -19,7 +19,7 @@ The fix prompt tells the model it may choose any of the four. The diff adds `rem
 
 ## Consequences
 
-- A null explosion is not required to come back as a repair. Quarantine and escalation are both valid.
+- A null explosion is not required to come back as a repair. Quarantine, escalation, and rerun are valid. The causal event for `NULL_EXPLOSION` is a `BACKFILL`, so asking the pipeline to rerun the partition is a valid response to that event, alongside quarantine and escalation. `kind_appropriate` uses that set. The other faults are unchanged.
 - A late partition is a rerun, not a dataframe edit.
 - Escalation still passes through the critic and the verifier. The verifier does not execute the module. It records a failed check named `escalated` and sets `needs_human`, so the loop does not retry.
 - The default kind on an older `Patch` is `ESCALATE`, so a patch that never chose a kind does not silently transform rows.

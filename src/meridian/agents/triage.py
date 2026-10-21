@@ -17,7 +17,7 @@ from meridian.contracts.triage import TriageAssessment, TriageResult
 from meridian.llm.errors import RunAborted, call_model
 from meridian.llm.prompt_size import estimate_tokens, incident_json, tagged_human
 from meridian.llm.submit import output_method_of, run_submit_only
-from meridian.llm.usage import make_llm_call
+from meridian.llm.usage import assemble_calls
 from meridian.prompts import TRIAGE_PROMPT_NAME, TRIAGE_PROMPT_VERSION, load_prompt
 
 MAX_TRIAGE_ATTEMPTS = 2
@@ -109,12 +109,12 @@ def _triage_one(
         return _degraded(incident, floor, prompt_version), calls
     bound = bind_structured(chat, TriageAssessment)
     attempts: list[LLMCall] = []
-    for attempt in range(1, MAX_TRIAGE_ATTEMPTS + 1):
-        parsed, call = _attempt(bound, messages, model_name, prompt_version, attempt)
-        attempts.append(call)
+    for _round in range(1, MAX_TRIAGE_ATTEMPTS + 1):
+        parsed, batch = _attempt(bound, messages, model_name, prompt_version, len(attempts) + 1)
+        attempts.extend(batch)
         if parsed is None or parsed.incident_id != incident.id:
             if parsed is not None:
-                attempts[-1] = call.model_copy(update={"succeeded": False})
+                attempts[-1] = batch[-1].model_copy(update={"succeeded": False})
             continue
         final = more_severe(parsed.severity, floor)
         result = TriageResult(
@@ -151,7 +151,7 @@ def _attempt(
     model_name: str,
     prompt_version: str,
     attempt: int,
-) -> tuple[TriageAssessment | None, LLMCall]:
+) -> tuple[TriageAssessment | None, list[LLMCall]]:
     started = time.perf_counter()
     parsed: TriageAssessment | None = None
     raw: object = None
@@ -170,7 +170,7 @@ def _attempt(
         if error is None and isinstance(candidate, TriageAssessment):
             parsed = candidate
             succeeded = True
-    call = make_llm_call(
+    batch = assemble_calls(
         node="triage",
         model=model_name,
         prompt_version=prompt_version,
@@ -183,7 +183,7 @@ def _attempt(
         tokens_after=tokens_after,
         structured=True,
     )
-    return parsed, call
+    return parsed, batch
 
 
 def _accepted(

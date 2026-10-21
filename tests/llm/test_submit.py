@@ -530,6 +530,7 @@ def test_root_and_fix_submit_on_the_first_turn(tmp_path: Path) -> None:
         model_name="qwen",
         chat=_BoundChat(
             [
+                _call("sample_failures", {"incident_id": str(incident.id), "n": 1}, "sample"),
                 _call(
                     "submit_patch",
                     {
@@ -537,7 +538,8 @@ def test_root_and_fix_submit_on_the_first_turn(tmp_path: Path) -> None:
                         "module_source": "def repair(df):\n    return df\n",
                         "regression_test": "def check(df):\n    return None\n",
                     },
-                )
+                    "patch",
+                ),
             ]
         ),
         tools=[],
@@ -633,3 +635,93 @@ def test_the_last_turn_degrades_when_text_persists() -> None:
     )
     assert parsed is None
     assert len(calls) == 2
+
+
+def test_the_critic_corrective_names_submit_verdict() -> None:
+    from meridian.llm.submit import CRITIC_CORRECTIVE
+
+    class Decision(BaseModel):
+        model_config = ConfigDict(extra="ignore")
+
+        approved: bool = False
+
+    script = _Script(
+        [
+            AIMessage(content="looks fine"),
+            _call("submit_verdict", {"approved": True, "objections": []}),
+        ]
+    )
+    parsed, calls = run_submit_only(
+        script,
+        [HumanMessage(content="go")],
+        Decision,
+        tool_name="submit_verdict",
+        node="critic",
+        model_name="gemma",
+        prompt_version="v1",
+        text_retry=CRITIC_CORRECTIVE,
+    )
+    assert parsed is not None
+    assert CRITIC_CORRECTIVE in _texts(script)
+    assert calls[1].corrective is True
+    assert calls[0].corrective is False
+
+
+def test_a_data_repair_without_sample_failures_is_a_tool_error() -> None:
+    from meridian.agents.fix import PatchDraft, _require_sample
+
+    repair = {
+        "remediation_kind": "DATA_REPAIR",
+        "module_source": "def repair(df):\n    return df\n",
+        "regression_test": "def check(df):\n    return None\n",
+    }
+    script = _Script(
+        [
+            _call("submit_patch", repair, "one"),
+            _call("sample_failures", {"incident_id": "x", "n": 1}, "two"),
+            _call("submit_patch", repair, "three"),
+        ]
+    )
+    parsed, _calls, records, _payloads = run_tool_loop(
+        script,
+        [HumanMessage(content="go")],
+        PatchDraft,
+        tool_name="submit_patch",
+        mcp_tools=[],
+        node="fix",
+        model_name="qwen",
+        prompt_version="v1",
+        max_tool_calls=4,
+        submit_guard=_require_sample,
+    )
+    assert isinstance(parsed, PatchDraft)
+    assert any(record.tool == "sample_failures" for record in records)
+    assert "sample_failures" in _texts(script)
+
+
+def test_retry_feedback_includes_the_previous_dry_run() -> None:
+    from meridian.agents.fix import _feedback
+    from meridian.contracts.dry_run import DryRunReport
+    from meridian.contracts.incident_case import IncidentCase
+
+    incident = make_incident()
+    hypothesis = make_hypothesis(incident_id=incident.id)
+    case = IncidentCase(
+        incident=incident,
+        hypothesis=hypothesis,
+        patch=make_patch(incident_id=incident.id, hypothesis_id=hypothesis.id),
+        dry_run=DryRunReport(
+            rows_sampled=10,
+            rows_changed=4,
+            rows_changed_outside=3,
+            over_broad=True,
+            contracts_after=1,
+            rows_fixed=2,
+            psi_after="0.4",
+        ),
+    )
+    text = _feedback(case)
+    assert "rows_changed_outside=3" in text
+    assert "rows_fixed=2" in text
+    assert "over_broad=True" in text
+    assert "psi_after=0.4" in text

@@ -12,6 +12,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from meridian.llm.family import model_family
 
+REPAIR_MODULES: tuple[str, ...] = ("pandas", "numpy", "math", "datetime")
+REGRESSION_MODULES: tuple[str, ...] = (*REPAIR_MODULES, "pandera")
+
 
 class MeridianConfigError(RuntimeError):
     """Raised when a caller requires configuration that is not set."""
@@ -144,6 +147,31 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MERIDIAN_CRITIC_FALLBACK"),
         description="Fallback providers for the critic.",
     )
+    llm_seed: int = Field(
+        default=42,
+        validation_alias=AliasChoices("MERIDIAN_LLM_SEED"),
+        description="Seed for every local model call. Temperature is always 0.",
+    )
+    triage_omniroute_model: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MERIDIAN_TRIAGE_OMNIROUTE_MODEL"),
+        description="Explicit OmniRoute model id for the triage fallback hop.",
+    )
+    rootcause_omniroute_model: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MERIDIAN_ROOTCAUSE_OMNIROUTE_MODEL"),
+        description="Explicit OmniRoute model id for the root-cause fallback hop.",
+    )
+    fix_omniroute_model: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MERIDIAN_FIX_OMNIROUTE_MODEL"),
+        description="Explicit OmniRoute model id for the fix fallback hop.",
+    )
+    critic_omniroute_model: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MERIDIAN_CRITIC_OMNIROUTE_MODEL"),
+        description="Explicit OmniRoute model id for the critic fallback hop.",
+    )
     ollama_base_url: str = Field(
         default="http://localhost:11434",
         validation_alias=AliasChoices("OLLAMA_BASE_URL"),
@@ -153,6 +181,41 @@ class Settings(BaseSettings):
         default="http://localhost:20128/v1",
         validation_alias=AliasChoices("OMNIROUTE_BASE_URL"),
         description="OpenAI-compatible base URL for OmniRoute.",
+    )
+    omniroute_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("OMNIROUTE_API_KEY"),
+        description="Bearer token sent to OmniRoute. Never logged.",
+    )
+    llm_timeout_s: float = Field(
+        default=180,
+        gt=0,
+        validation_alias=AliasChoices("MERIDIAN_LLM_TIMEOUT_S"),
+        description="Seconds one model call may run before it is a transient timeout.",
+    )
+    llm_max_output_tokens: int = Field(
+        default=2048,
+        ge=1,
+        validation_alias=AliasChoices("MERIDIAN_LLM_MAX_OUTPUT_TOKENS"),
+        description="Maximum output tokens for one call. Ollama receives this as num_predict.",
+    )
+    llm_num_ctx: int = Field(
+        default=8192,
+        ge=1,
+        validation_alias=AliasChoices("MERIDIAN_LLM_NUM_CTX"),
+        description="Context window for local Ollama models.",
+    )
+    run_wall_budget_s: float = Field(
+        default=900,
+        gt=0,
+        validation_alias=AliasChoices("MERIDIAN_RUN_WALL_BUDGET_S"),
+        description="Seconds one graph run may take before it aborts as WALL_BUDGET.",
+    )
+    max_model_gb: float = Field(
+        default=26,
+        gt=0,
+        validation_alias=AliasChoices("MERIDIAN_MAX_MODEL_GB"),
+        description="Largest combined size of the configured local models, in gigabytes.",
     )
     allow_paid: bool = Field(
         default=False,
@@ -237,6 +300,11 @@ class Settings(BaseSettings):
         "rootcause_model",
         "fix_model",
         "critic_model",
+        "triage_omniroute_model",
+        "rootcause_omniroute_model",
+        "fix_omniroute_model",
+        "critic_omniroute_model",
+        "omniroute_api_key",
         "max_usd_per_run",
         "max_usd_per_day",
         mode="before",

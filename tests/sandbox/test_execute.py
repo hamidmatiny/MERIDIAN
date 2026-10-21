@@ -36,6 +36,26 @@ def test_unknown_entry_is_a_runtime_failure() -> None:
     assert result.frame is None
 
 
+def test_execute_after_sentinel_shutdown() -> None:
+    """A dry-run after Sentinel's shutdown must start Ray again without a double-init crash."""
+    from meridian.agents.ray_runtime import ray_runtime
+
+    frame = pd.DataFrame({"speed_mps": [72.0]})
+    source = "def repair(df):\n    return df\n"
+    with ray_runtime(1):
+        pass
+    result = execute(
+        source,
+        frame,
+        entry="repair",
+        timeout_s=30,
+        memory_mb=256,
+        num_cpus=1,
+    )
+    assert result.kind == "ok"
+    assert result.frame is not None
+
+
 def test_clean_repair_runs() -> None:
     frame = pd.DataFrame({"speed_mps": [72.0, 36.0]})
     source = (

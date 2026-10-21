@@ -1,12 +1,13 @@
 """Probe whether a provider can call tools or emit a schema, and cache the answer."""
 
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from meridian.config import Settings
 from meridian.llm.router import resolve_chain
@@ -37,10 +38,15 @@ class Capability(BaseModel):
     tool_calling: bool = False
     structured_json_schema: bool = False
     structured_json_mode: bool = False
+    reachable: bool = True
+    auth_failed: bool = False
+    probed_at: str = ""
 
 
 def method_for(capability: Capability) -> str | None:
     """Prefer a submit tool, then JSON schema, then JSON mode."""
+    if capability.auth_failed or not capability.reachable:
+        return None
     if capability.tool_calling:
         return "submit_tool"
     if capability.structured_json_schema:
@@ -88,7 +94,7 @@ def format_table(rows: list[Capability], methods: dict[str, list[str | None]]) -
             f"tool_calling={row.tool_calling} "
             f"json_schema={row.structured_json_schema} "
             f"json_mode={row.structured_json_mode} "
-            f"method={method_for(row) or 'none'}"
+            f"method={_method_label(row)}"
         )
     for node, chosen in methods.items():
         rendered = ",".join(item or "none" for item in chosen) or "none"
@@ -127,7 +133,13 @@ def plan_nodes(
         if not isinstance(model, str) or model.strip() == "":
             methods[node] = []
             continue
-        hops = resolve_chain(provider, model, fallback, allow_paid=settings.allow_paid)
+        hops = resolve_chain(
+            provider,
+            model,
+            fallback,
+            allow_paid=settings.allow_paid,
+            omniroute_model=_omniroute_model(settings, node),
+        )
         chosen: list[str | None] = []
         for hop_provider, hop_model in hops:
             row = _cached(
@@ -156,13 +168,21 @@ def _cached(
     stored = _read(path)
     raw = stored.get(key)
     if isinstance(raw, dict):
-        return Capability.model_validate(raw)
+        try:
+            cached = Capability.model_validate(raw)
+        except ValidationError:
+            cached = None
+        if cached is not None and cached.reachable and _fresh(cached):
+            return cached
     row = probe(provider, model, version, settings)
     if not isinstance(row, Capability):
         row = Capability.model_validate(row)
-    stored[key] = row.model_dump()
+    if not row.reachable or row.auth_failed:
+        return row
+    stamped = row.model_copy(update={"probed_at": datetime.now(UTC).isoformat()})
+    stored[key] = stamped.model_dump()
     _write(path, stored)
-    return row
+    return stamped
 
 
 def _read(path: Path) -> dict[str, object]:
@@ -182,6 +202,40 @@ def _write(path: Path, payload: dict[str, object]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
+def _omniroute_model(settings: Settings, node: str) -> str | None:
+    value = getattr(settings, f"{node}_omniroute_model", None)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _fresh(row: Capability) -> bool:
+    """A cached probe lasts 24 hours. A blank timestamp is not a probe answer."""
+    if not row.probed_at:
+        return False
+    try:
+        probed = datetime.fromisoformat(row.probed_at)
+    except ValueError:
+        return False
+    if probed.tzinfo is None:
+        probed = probed.replace(tzinfo=UTC)
+    return datetime.now(UTC) - probed < timedelta(hours=24)
+
+
+def _method_label(row: Capability) -> str:
+    if not row.reachable:
+        return "UNREACHABLE"
+    if row.auth_failed:
+        return "AUTH_FAILED"
+    found = method_for(row)
+    return "none" if found is None else found
+
+
+def _answered(results: list[tuple[int, str]]) -> bool:
+    """A connection error or a timeout is status 0 and is not a probe answer."""
+    return any(status != 0 for status, _body in results)
+
+
 def _ollama_version(base_url: str) -> str:
     status, body = _request("GET", base_url.rstrip("/") + "/api/version", None)
     if status != 200:
@@ -198,7 +252,7 @@ def _http_probe(provider: str, model: str, version: str, settings: Settings) -> 
     if provider == "ollama":
         return _probe_ollama(settings.ollama_base_url, model, version)
     if provider == "omniroute":
-        return _probe_openai(settings.omniroute_base_url, "omniroute", model, version)
+        return _probe_openai(settings.omniroute_base_url, "omniroute", model, version, settings)
     if provider in {"anthropic", "xai"}:
         return Capability(
             provider=provider,
@@ -216,6 +270,7 @@ def _probe_ollama(base_url: str, model: str, version: str) -> Capability:
     tool = _request("POST", root + "/api/chat", _ollama_tool(model))
     schema = _request("POST", root + "/api/chat", _ollama_format(model, _SCHEMA))
     mode = _request("POST", root + "/api/chat", _ollama_format(model, "json"))
+    answers = [tool, schema, mode]
     return Capability(
         provider="ollama",
         model=model,
@@ -223,23 +278,50 @@ def _probe_ollama(base_url: str, model: str, version: str) -> Capability:
         tool_calling=supported(*tool),
         structured_json_schema=supported(*schema),
         structured_json_mode=supported(*mode),
+        reachable=_answered(answers),
     )
 
 
-def _probe_openai(base_url: str, provider: str, model: str, version: str) -> Capability:
+def _probe_openai(
+    base_url: str,
+    provider: str,
+    model: str,
+    version: str,
+    settings: Settings | None = None,
+) -> Capability:
     root = base_url.rstrip("/")
     url = root + "/chat/completions"
-    tool = _request("POST", url, _openai_tool(model))
-    schema = _request("POST", url, _openai_schema(model))
-    mode = _request("POST", url, _openai_json(model))
+    headers = {} if settings is None else _bearer(settings)
+    tool = _request("POST", url, _openai_tool(model), headers)
+    schema = _request("POST", url, _openai_schema(model), headers)
+    mode = _request("POST", url, _openai_json(model), headers)
+    answers = [tool, schema, mode]
+    denied = _auth_failed(answers)
     return Capability(
         provider=provider,
         model=model,
         ollama_version=version,
-        tool_calling=supported(*tool),
-        structured_json_schema=supported(*schema),
-        structured_json_mode=supported(*mode),
+        tool_calling=False if denied else supported(*tool),
+        structured_json_schema=False if denied else supported(*schema),
+        structured_json_mode=False if denied else supported(*mode),
+        reachable=_answered(answers),
+        auth_failed=denied,
     )
+
+
+def _bearer(settings: Settings) -> dict[str, str]:
+    secret = settings.omniroute_api_key
+    if secret is None:
+        return {}
+    value = secret.get_secret_value().strip()
+    if not value:
+        return {}
+    return {"Authorization": "Bearer " + value}
+
+
+def _auth_failed(results: list[tuple[int, str]]) -> bool:
+    codes = [status for status, _body in results if status != 0]
+    return bool(codes) and all(status == 401 for status in codes)
 
 
 def _ollama_tool(model: str) -> dict[str, object]:
@@ -292,9 +374,17 @@ def _openai_json(model: str) -> dict[str, object]:
     }
 
 
-def _request(method: str, url: str, payload: dict[str, object] | None) -> tuple[int, str]:
+def _request(
+    method: str,
+    url: str,
+    payload: dict[str, object] | None,
+    headers: dict[str, str] | None = None,
+) -> tuple[int, str]:
     data = None if payload is None else json.dumps(payload).encode()
-    request = Request(url, data=data, headers={"Content-Type": "application/json"}, method=method)
+    sent = {"Content-Type": "application/json"}
+    if headers:
+        sent.update(headers)
+    request = Request(url, data=data, headers=sent, method=method)
     try:
         with urlopen(request, timeout=30) as response:
             return response.status, response.read().decode()

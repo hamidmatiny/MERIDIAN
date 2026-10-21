@@ -27,3 +27,7 @@ class Verdict(MeridianModel):
         description="Typed reasons the reviewer rejected the patch, if any.",
     )
     round: int = Field(ge=1, le=3, description="Critic round, from 1 through 3.")
+    corrective: bool = Field(
+        default=False,
+        description="True when a prose reply needed the submit_verdict corrective.",
+    )

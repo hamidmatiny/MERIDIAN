@@ -76,6 +76,13 @@ def test_escalate_and_rerun_do_not_claim_a_row_match() -> None:
     )
     scored = score(rerun, clean, late)
     assert scored.kind_appropriate is True
+    null_rerun, null_label = _case(
+        clean,
+        FaultType.NULL_EXPLOSION,
+        RemediationKind.RERUN_UPSTREAM,
+        "def repair(df):\n    return df\n",
+    )
+    assert score(null_rerun, clean, null_label).kind_appropriate is True
     assert scored.repaired_matches_clean is True
     assert scored.rows_lost_pct == 0.0
 

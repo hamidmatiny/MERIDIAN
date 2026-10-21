@@ -44,6 +44,12 @@
       "title": "Approved",
       "type": "boolean"
     },
+    "corrective": {
+      "default": false,
+      "description": "True when a prose reply needed the submit_verdict corrective.",
+      "title": "Corrective",
+      "type": "boolean"
+    },
     "critic_degraded": {
       "default": false,
       "description": "True when structured output failed. That is not a rejection.",
