@@ -310,6 +310,43 @@ def test_live_critic_uses_the_configured_model(monkeypatch) -> None:
     assert created["model_name"] == "configured-critic"
 
 
+def test_live_aborts_before_work_when_no_method_exists(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("XAI_API_KEY", "")
+    monkeypatch.setenv("MERIDIAN_ALLOW_PAID", "0")
+    monkeypatch.setenv("MERIDIAN_TRIAGE_MODEL", "qwen3.5:4b")
+    monkeypatch.setenv("MERIDIAN_ROOTCAUSE_MODEL", "qwen3.5:4b")
+    monkeypatch.setenv("MERIDIAN_FIX_MODEL", "qwen3.5:4b")
+    monkeypatch.setenv("MERIDIAN_CRITIC_MODEL", "gemma4:e4b")
+
+    def refuse(settings: object) -> tuple[list[object], dict[str, list[str | None]]]:
+        del settings
+        return [], {node: [None] for node in ("triage", "rootcause", "fix", "critic")}
+
+    def explode(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise AssertionError("agent work started")
+
+    monkeypatch.setattr("meridian.run.plan_nodes", refuse)
+    monkeypatch.setattr("meridian.run._prepare", explode)
+    code = main(
+        [
+            "--dataset",
+            "vehicle_telemetry",
+            "--fault",
+            "UNIT_MISMATCH",
+            "--intensity",
+            "0.1",
+            "--seed",
+            "42",
+            "--live",
+        ]
+    )
+    assert code == 1
+    assert "no structured method" in capsys.readouterr().err
+
+
 def test_live_builder_requires_an_api_key(monkeypatch) -> None:
     from meridian.agents.live_llm import build_live_chat
     from meridian.config import MeridianConfigError

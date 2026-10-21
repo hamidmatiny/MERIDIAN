@@ -27,6 +27,7 @@ from meridian.contracts.state import MeridianState
 from meridian.contracts.tool_call import ToolCall
 from meridian.llm.errors import RunAborted, call_model, unwrap_abort
 from meridian.llm.prompt_size import estimate_tokens, incident_json, tagged_human
+from meridian.llm.submit import output_method_of, run_submit_only, run_tool_loop
 from meridian.llm.usage import make_llm_call
 from meridian.mcp_servers.client import invoke_tool
 from meridian.mcp_servers.impl import publish_incident
@@ -93,6 +94,7 @@ class LoopState(BaseModel):
     tool_calls: list[ToolCall] = Field(default_factory=list)
     hypothesis: Hypothesis | None = None
     causal_raw: str = ""
+    budget_fallback: bool = False
 
 
 def render_root_cause_prompt(state: MeridianState, *, max_tool_calls: int) -> tuple[str, str]:
@@ -133,6 +135,31 @@ def run_root_cause(
         raise ValueError("root cause runs after triage")
     publish_incident(evidence_root, case.incident)
     sent, uncut = render_root_cause_prompt(state, max_tool_calls=max_tool_calls)
+    if output_method_of(chat) == "submit_tool":
+        try:
+            hypothesis, llm_calls, tool_calls, budget_fallback = _submit_root(
+                sent,
+                uncut,
+                chat=chat,
+                tools=tools,
+                model_name=model_name,
+                prompt_version=prompt_version,
+                max_tool_calls=max_tool_calls,
+                incident_id=case.incident.id,
+            )
+        except RunAborted as exc:
+            return {"aborted": True, "abort_reason": str(exc)}
+        updated = case.model_copy(
+            update={
+                "hypothesis": hypothesis,
+                "hypothesis_from_budget_fallback": budget_fallback,
+            }
+        )
+        return {
+            "cases": {key: updated},
+            "llm_calls": llm_calls,
+            "tool_calls": tool_calls,
+        }
     loop = _compile_loop(
         chat=chat,
         tools=tools,
@@ -161,16 +188,23 @@ def run_root_cause(
             raise
         return {"aborted": True, "abort_reason": str(aborted)}
     finished = result if isinstance(result, LoopState) else LoopState.model_validate(result)
-    hypothesis = finished.hypothesis
-    if hypothesis is None:
-        hypothesis = _fallback(case.incident.id, prompt_version)
-    hypothesis = hypothesis.model_copy(
+    resolved = finished.hypothesis
+    budget_fallback = finished.budget_fallback
+    if resolved is None:
+        resolved = _fallback(case.incident.id, prompt_version)
+        budget_fallback = True
+    hypothesis = resolved.model_copy(
         update={
             "id": uuid5(MERIDIAN_NAMESPACE, f"hypothesis|{case.incident.id}|{prompt_version}"),
             "incident_id": case.incident.id,
         }
     )
-    updated = case.model_copy(update={"hypothesis": hypothesis})
+    updated = case.model_copy(
+        update={
+            "hypothesis": hypothesis,
+            "hypothesis_from_budget_fallback": budget_fallback,
+        }
+    )
     return {
         "cases": {key: updated},
         "llm_calls": list(finished.llm_calls),
@@ -312,6 +346,8 @@ def _force_answer(
     prompt_version: str,
     prior: list[LLMCall] | None = None,
 ) -> dict[str, object]:
+    if output_method_of(chat) == "json_mode":
+        return _json_answer(state, chat, model_name, prompt_version, prior)
     structured = bind_structured(chat, RootCauseDraft)
     parsed, causal_raw, call = _invoke_structured(
         structured,
@@ -322,8 +358,19 @@ def _force_answer(
         attempt=(len(prior) if prior is not None else len(state.llm_calls)) + 1,
     )
     calls = [*(prior if prior is not None else state.llm_calls), call]
-    hypothesis = parsed if parsed is not None else _fallback(state.incident_id, prompt_version)
-    return {"hypothesis": hypothesis, "llm_calls": calls, "causal_raw": causal_raw}
+    if parsed is None:
+        return {
+            "hypothesis": _fallback(state.incident_id, prompt_version),
+            "llm_calls": calls,
+            "causal_raw": causal_raw,
+            "budget_fallback": True,
+        }
+    return {
+        "hypothesis": parsed,
+        "llm_calls": calls,
+        "causal_raw": causal_raw,
+        "budget_fallback": False,
+    }
 
 
 def _execute(state: LoopState, tools_by_name: dict[str, BaseTool]) -> dict[str, object]:
@@ -391,6 +438,78 @@ def _invoke_model(
     return response, call
 
 
+def _submit_root(
+    sent: str,
+    uncut: str,
+    *,
+    chat: ToolChat,
+    tools: list[BaseTool],
+    model_name: str,
+    prompt_version: str,
+    max_tool_calls: int,
+    incident_id: UUID,
+) -> tuple[Hypothesis, list[LLMCall], list[ToolCall], bool]:
+    """Investigate with a submit tool. A missing submit becomes the budget fallback."""
+    human = tagged_human(sent, before=estimate_tokens(uncut), after=estimate_tokens(sent))
+    parsed, calls, records, payloads = run_tool_loop(
+        chat,
+        [human],
+        RootCauseDraft,
+        tool_name="submit_hypothesis",
+        mcp_tools=tools,
+        node=NODE,
+        model_name=model_name,
+        prompt_version=prompt_version,
+        max_tool_calls=max_tool_calls,
+    )
+    refs: list[str] = []
+    updated_records: list[ToolCall] = []
+    for record, payload in zip(records, payloads, strict=True):
+        found = collect_refs(payload)
+        refs = _union(refs, found)
+        updated_records.append(record.model_copy(update={"ref_count": len(found)}))
+    draft = parsed if isinstance(parsed, RootCauseDraft) else None
+    built = None if draft is None else _from_draft(draft, incident_id, prompt_version)
+    if built is None:
+        return _fallback(incident_id, prompt_version), calls, updated_records, True
+    hypothesis = ground(built[0], set(refs), causal_raw=built[1])
+    return hypothesis, calls, updated_records, False
+
+
+def _json_answer(
+    state: LoopState,
+    chat: ToolChat,
+    model_name: str,
+    prompt_version: str,
+    prior: list[LLMCall] | None,
+) -> dict[str, object]:
+    parsed, extra = run_submit_only(
+        chat,
+        _messages(state.turns),
+        RootCauseDraft,
+        tool_name="submit_hypothesis",
+        node=NODE,
+        model_name=model_name,
+        prompt_version=prompt_version,
+    )
+    calls = [*(prior if prior is not None else state.llm_calls), *extra]
+    draft = parsed if isinstance(parsed, RootCauseDraft) else None
+    built = None if draft is None else _from_draft(draft, state.incident_id, prompt_version)
+    if built is None:
+        return {
+            "hypothesis": _fallback(state.incident_id, prompt_version),
+            "llm_calls": calls,
+            "causal_raw": "",
+            "budget_fallback": True,
+        }
+    return {
+        "hypothesis": built[0],
+        "llm_calls": calls,
+        "causal_raw": built[1],
+        "budget_fallback": False,
+    }
+
+
 def _invoke_structured(
     bound: Any,
     messages: list[BaseMessage],
@@ -419,6 +538,7 @@ def _invoke_structured(
             bound,
             tokens_before,
             tokens_after,
+            structured=True,
         ),
     )
 
@@ -539,6 +659,7 @@ def _call_record(
     bound: object,
     tokens_before: int,
     tokens_after: int,
+    structured: bool = False,
 ) -> LLMCall:
     message = raw.get("raw") if isinstance(raw, dict) else raw
     return make_llm_call(
@@ -552,6 +673,7 @@ def _call_record(
         bound=bound,
         tokens_before=tokens_before,
         tokens_after=tokens_after,
+        structured=structured,
     )
 
 

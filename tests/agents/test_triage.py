@@ -118,6 +118,9 @@ def test_live_triage_smoke(tmp_path: Path) -> None:
     if settings.triage_provider in {"anthropic", "xai"} and not settings.allow_paid:
         pytest.skip("paid provider requires MERIDIAN_ALLOW_PAID=1")
     chat, model_name = build_node_chat(settings, "triage")
+    from meridian.llm.capabilities import arm_node
+
+    arm_node(settings, "triage", chat)
     updated = run_triage(
         _incident(tmp_path),
         model_name=model_name,

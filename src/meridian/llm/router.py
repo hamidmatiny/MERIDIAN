@@ -53,6 +53,8 @@ class FallbackChat:
         self.active_model = hops[0].model
         self.fallback_used = False
         self.abort_gate = gate
+        self.hop_methods: list[str | None] = [None for _hop in hops]
+        self.output_method: str | None = None
 
     def bind_tools(self, tools: list[Any], **kwargs: Any) -> "FallbackBound":
         return FallbackBound(self, lambda hop: hop.client.bind_tools(tools, **kwargs))
@@ -69,6 +71,7 @@ class FallbackChat:
     def _call(self, messages: Any, action: Callable[[Hop], Any]) -> Any:
         self.gate.check()
         last: BaseException | None = None
+        unsupported: BaseException | None = None
         for index, hop in enumerate(self.hops):
             for attempt in range(3):
                 self.gate.check()
@@ -90,6 +93,9 @@ class FallbackChat:
                         self.gate.trip(f"{kind.value}: {exc}")
                         raise RunAborted(kind.value, str(exc)) from exc
                     last = exc
+                    if kind is ProviderFailure.UNSUPPORTED:
+                        unsupported = exc
+                        break
                     if kind is ProviderFailure.TRANSIENT and attempt < 2:
                         self.sleeper(self.backoff_s * (attempt + 1))
                         continue
@@ -97,6 +103,9 @@ class FallbackChat:
                 else:
                     self._account(hop, result, index)
                     return result
+        if unsupported is not None:
+            self.gate.trip(f"UNSUPPORTED: {unsupported}")
+            raise RunAborted("UNSUPPORTED", str(unsupported)) from unsupported
         if last is None:
             raise RuntimeError("no provider left in the chain")
         raise last

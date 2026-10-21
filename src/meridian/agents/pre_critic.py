@@ -50,6 +50,16 @@ def run_pre_critic(
             }
         )
         return {"cases": {key: updated}}
+    if case.patch.remediation_kind in (RemediationKind.ESCALATE, RemediationKind.RERUN_UPSTREAM):
+        skipped = case.model_copy(
+            update={
+                "pre_critic_attempt": case.fix_attempts,
+                "pre_critic_blocked": False,
+                "pre_critic_note": "",
+                "dry_run": None,
+            }
+        )
+        return {"cases": {key: skipped}}
     report = _dry_run(
         state,
         source,
@@ -108,17 +118,6 @@ def _dry_run(
     frame, profile = loaded
     sample = _sample(frame)
     kind = case.patch.remediation_kind
-    if kind in (RemediationKind.ESCALATE, RemediationKind.RERUN_UPSTREAM):
-        return _measured(
-            sample,
-            sample,
-            case.incident.dataset,
-            case.incident.fault_type,
-            ref.metadata,
-            profile,
-            quarantine=False,
-            detail=f"{kind.value} has no row transform",
-        )
     from meridian.sandbox.execute import execute
 
     entry = "quarantine" if kind is RemediationKind.QUARANTINE else "repair"

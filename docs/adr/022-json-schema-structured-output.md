@@ -19,6 +19,7 @@ A parsed object is accepted as the Pydantic model or as a dict that validates as
 ## Consequences
 
 - The live triage test requires `succeeded` true and `llm_severity` set. A provider that rejects JSON schema fails that test in the open.
+- ADR-026 keeps this method, and uses it only after a capability probe says the provider accepts JSON schema. Ollama 0.40.6 returns HTTP 501 for `format` on `qwen3.5:4b` and `gemma4:e4b`, including `format: "json"`. Those models submit the contract as a tool instead.
 - Prompts are unchanged. The fix is the output channel, not the wording.
 - A future model that supports neither JSON schema nor forced tools needs a new decision. This one does not add a second parser per node.
 

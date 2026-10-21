@@ -16,6 +16,7 @@ from meridian.contracts.state import MeridianState
 from meridian.contracts.triage import TriageAssessment, TriageResult
 from meridian.llm.errors import RunAborted, call_model
 from meridian.llm.prompt_size import estimate_tokens, incident_json, tagged_human
+from meridian.llm.submit import output_method_of, run_submit_only
 from meridian.llm.usage import make_llm_call
 from meridian.prompts import TRIAGE_PROMPT_NAME, TRIAGE_PROMPT_VERSION, load_prompt
 
@@ -93,14 +94,27 @@ def _triage_one(
     messages: list[BaseMessage] = [
         tagged_human(sent, before=estimate_tokens(uncut), after=estimate_tokens(sent)),
     ]
+    if output_method_of(chat) in {"submit_tool", "json_mode"}:
+        parsed, calls = run_submit_only(
+            chat,
+            messages,
+            TriageAssessment,
+            tool_name="submit_triage_assessment",
+            node="triage",
+            model_name=model_name,
+            prompt_version=prompt_version,
+        )
+        if isinstance(parsed, TriageAssessment) and parsed.incident_id == incident.id:
+            return _accepted(parsed, incident, floor, prompt_version), calls
+        return _degraded(incident, floor, prompt_version), calls
     bound = bind_structured(chat, TriageAssessment)
-    calls: list[LLMCall] = []
+    attempts: list[LLMCall] = []
     for attempt in range(1, MAX_TRIAGE_ATTEMPTS + 1):
         parsed, call = _attempt(bound, messages, model_name, prompt_version, attempt)
-        calls.append(call)
+        attempts.append(call)
         if parsed is None or parsed.incident_id != incident.id:
             if parsed is not None:
-                calls[-1] = call.model_copy(update={"succeeded": False})
+                attempts[-1] = call.model_copy(update={"succeeded": False})
             continue
         final = more_severe(parsed.severity, floor)
         result = TriageResult(
@@ -115,7 +129,7 @@ def _triage_one(
             prompt_version=prompt_version,
             triage_degraded=False,
         )
-        return result, calls
+        return result, attempts
     degraded = TriageResult(
         incident_id=incident.id,
         severity=floor,
@@ -128,7 +142,7 @@ def _triage_one(
         prompt_version=prompt_version,
         triage_degraded=True,
     )
-    return degraded, calls
+    return degraded, attempts
 
 
 def _attempt(
@@ -167,5 +181,42 @@ def _attempt(
         bound=bound,
         tokens_before=tokens_before,
         tokens_after=tokens_after,
+        structured=True,
     )
     return parsed, call
+
+
+def _accepted(
+    parsed: TriageAssessment,
+    incident: Incident,
+    floor: Severity,
+    prompt_version: str,
+) -> TriageResult:
+    final = more_severe(parsed.severity, floor)
+    return TriageResult(
+        incident_id=incident.id,
+        severity=final,
+        rationale=parsed.rationale,
+        affected_consumers=list(parsed.affected_consumers),
+        confidence=parsed.confidence,
+        llm_severity=parsed.severity,
+        floor_severity=floor,
+        final_severity=final,
+        prompt_version=prompt_version,
+        triage_degraded=False,
+    )
+
+
+def _degraded(incident: Incident, floor: Severity, prompt_version: str) -> TriageResult:
+    return TriageResult(
+        incident_id=incident.id,
+        severity=floor,
+        rationale=_DEGRADED_RATIONALE,
+        affected_consumers=list(incident.blast_radius),
+        confidence=0.0,
+        llm_severity=None,
+        floor_severity=floor,
+        final_severity=floor,
+        prompt_version=prompt_version,
+        triage_degraded=True,
+    )

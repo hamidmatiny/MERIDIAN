@@ -109,6 +109,10 @@ class IncidentCase(MeridianModel):
         default=None,
         description="Latest pre-critic dry-run. The critic is shown this report.",
     )
+    hypothesis_from_budget_fallback: bool = Field(
+        default=False,
+        description="True when the hypothesis is the tool-budget fallback.",
+    )
 
     @property
     def severity(self) -> Severity | None:

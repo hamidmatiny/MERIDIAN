@@ -93,7 +93,7 @@ Loop limits, enforced on each `IncidentCase`: a critic rejection under round 3 r
 - `src/meridian/injector/` — one injector per fault type, the seeded `events.jsonl` log, and the `python -m meridian.injector` CLI.
 - `src/meridian/config.py` — settings loaded from the environment and `.env`. Missing keys do not crash import. `Settings.require_anthropic()`, `Settings.require_xai()`, and `Settings.require_slack()` raise when a caller actually needs those credentials. `--live` asks for Anthropic, then the four model names, then xAI.
 - `schemas/` — JSON Schema generated from the contracts.
-- `docs/adr/` — ADR-001 through ADR-025.
+- `docs/adr/` — ADR-001 through ADR-026.
 - `.github/workflows/ci.yml` — the checks below.
 
 Generated Parquet under `data/` is gitignored.

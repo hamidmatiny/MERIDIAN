@@ -13,6 +13,7 @@ class ProviderFailure(StrEnum):
     AUTH = "AUTH"
     QUOTA = "QUOTA"
     TRANSIENT = "TRANSIENT"
+    UNSUPPORTED = "UNSUPPORTED"
     BAD_OUTPUT = "BAD_OUTPUT"
 
 
@@ -64,6 +65,8 @@ def classify(exc: BaseException) -> ProviderFailure:
         return ProviderFailure.AUTH
     if status == 429 and ("quota" in text or "limit" in text):
         return ProviderFailure.QUOTA
+    if status == 501 or _capability_missing(text):
+        return ProviderFailure.UNSUPPORTED
     if status == 429 or (status is not None and status >= 500):
         return ProviderFailure.TRANSIENT
     if "timeout" in text or "timed out" in text:
@@ -102,6 +105,13 @@ def guarded_invoke(bound: Any, messages: Any) -> Any:
                 gate.trip(f"{kind.value}: {exc}")
             raise RunAborted(kind.value, str(exc)) from exc
         raise
+
+
+def _capability_missing(text: str) -> bool:
+    """True when the provider says a feature is not implemented."""
+    if "unavailable" in text and ("structured" in text or "capability" in text):
+        return True
+    return "does not support" in text and ("tool" in text or "json" in text or "structured" in text)
 
 
 def _status(exc: BaseException) -> int | None:

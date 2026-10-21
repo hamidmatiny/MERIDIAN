@@ -44,6 +44,11 @@ def _live(tmp_path: Path, dataset: str, fault: FaultType) -> None:
     root_chat, root_model = build_node_chat(settings, "rootcause", gate=gate, budget=budget)
     fix_chat, fix_model = build_node_chat(settings, "fix", gate=gate, budget=budget)
     critic_chat, critic_model = build_node_chat(settings, "critic", gate=gate, budget=budget)
+    from meridian.llm.capabilities import arm_node
+
+    arm_node(settings, "rootcause", root_chat)
+    arm_node(settings, "fix", fix_chat)
+    arm_node(settings, "critic", critic_chat)
     ref = write_partition(
         tmp_path,
         dataset=dataset,

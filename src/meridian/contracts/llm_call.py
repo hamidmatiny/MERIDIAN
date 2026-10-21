@@ -35,3 +35,7 @@ class LLMCall(MeridianModel):
         default=False,
         description="True when an earlier hop in the node's chain failed over.",
     )
+    structured: bool = Field(
+        default=False,
+        description="True when this attempt asked the model to submit the node contract.",
+    )

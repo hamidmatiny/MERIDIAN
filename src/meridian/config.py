@@ -219,6 +219,11 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MERIDIAN_CHECKPOINT_PATH"),
         description="SQLite file the LangGraph checkpointer writes.",
     )
+    capabilities_path: str = Field(
+        default="data/capabilities.json",
+        validation_alias=AliasChoices("MERIDIAN_CAPABILITIES_PATH"),
+        description="Cache of provider capability probes, keyed by provider, model, and version.",
+    )
 
     @field_validator(
         "anthropic_api_key",

@@ -87,6 +87,36 @@ def test_import_outside_the_gate_is_not_a_critic_round() -> None:
     assert updated.critic_rounds == 0
 
 
+def test_escalate_and_rerun_leave_dry_run_unset() -> None:
+    source = "def repair(df):\n    return df\n"
+    for kind in (RemediationKind.ESCALATE, RemediationKind.RERUN_UPSTREAM):
+        incident = make_incident()
+        hypothesis = make_hypothesis(incident_id=incident.id)
+        patch = make_patch(incident_id=incident.id, hypothesis_id=hypothesis.id).model_copy(
+            update={
+                "remediation_kind": kind,
+                "diff": unified_diff("remediations/x.py", source),
+                "regression_test": "def check(df):\n    return None\n",
+            }
+        )
+        case = IncidentCase(
+            incident=incident,
+            hypothesis=hypothesis,
+            patch=patch,
+            fix_attempts=1,
+        )
+        update = run_pre_critic(
+            MeridianState(run_id=uuid4(), cases={str(incident.id): case}),
+            num_cpus=1,
+            timeout_s=1,
+            memory_mb=64,
+        )
+        updated = update["cases"][str(incident.id)]
+        assert updated.pre_critic_blocked is False
+        assert updated.dry_run is None
+        assert updated.critic_rounds == 0
+
+
 def test_over_broad_is_a_row_flag() -> None:
     before = pd.DataFrame({"speed_mps": [10.0, 80.0, 12.0]})
     after = pd.DataFrame({"speed_mps": [10.0 / 3.6, 80.0 / 3.6, 12.0 / 3.6]})
@@ -247,7 +277,7 @@ def test_dry_run_executes_a_repair_and_a_failed_one(tmp_path: Path) -> None:
         memory_mb=64,
     )
     detail = loaded["cases"][str(incident.id)].dry_run.detail
-    assert "No such file" in detail
+    assert "missing.parquet" in detail
 
 
 def test_quarantine_and_row_edges(tmp_path: Path) -> None:

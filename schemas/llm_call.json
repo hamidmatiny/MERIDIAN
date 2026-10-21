@@ -67,6 +67,12 @@
       "title": "Provider",
       "type": "string"
     },
+    "structured": {
+      "default": false,
+      "description": "True when this attempt asked the model to submit the node contract.",
+      "title": "Structured",
+      "type": "boolean"
+    },
     "succeeded": {
       "description": "True when structured output validated.",
       "title": "Succeeded",

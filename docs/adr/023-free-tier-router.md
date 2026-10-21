@@ -10,7 +10,7 @@ Live runs were bound to Claude and Grok. A credit error was recorded as a failed
 
 Each of triage, root cause, fix, and critic has `MERIDIAN_<NODE>_PROVIDER` and `MERIDIAN_<NODE>_MODEL`. Providers are `ollama`, `omniroute`, `anthropic`, `xai`, and `fake`. The default chain is Ollama, then OmniRoute. Paid providers are never in that default. OmniRoute rejects `auto` and combo names.
 
-Ollama uses `ChatOllama` and `OLLAMA_BASE_URL`. OmniRoute uses `ChatOpenAI` against `OMNIROUTE_BASE_URL`. Structured output stays on `json_schema` (ADR-022). Every `LLMCall` records `provider`, `model`, and `fallback_used`.
+Ollama uses `ChatOllama` and `OLLAMA_BASE_URL`. OmniRoute uses `ChatOpenAI` against `OMNIROUTE_BASE_URL`. `OMNIROUTE_BASE_URL` comes only from this setting. Structured output uses `json_schema` (ADR-022) when the capability probe says the model accepts it, and a submit tool otherwise (ADR-026). Every `LLMCall` records `provider`, `model`, and `fallback_used`.
 
 The pinned free models are `qwen3.5:4b` for triage, root cause, and fix, and `gemma4:e4b` for the critic.
 

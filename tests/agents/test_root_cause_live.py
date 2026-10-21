@@ -37,6 +37,9 @@ def test_live_root_cause_on_schema_drift(tmp_path: Path) -> None:
     if settings.rootcause_provider in {"anthropic", "xai"} and not settings.allow_paid:
         pytest.skip("paid provider requires MERIDIAN_ALLOW_PAID=1")
     chat, model_name = build_node_chat(settings, "rootcause")
+    from meridian.llm.capabilities import arm_node
+
+    arm_node(settings, "rootcause", chat)
     ref = write_partition(
         tmp_path,
         dataset="vehicle_telemetry",

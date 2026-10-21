@@ -56,6 +56,7 @@ def test_report_lists_nodes_verdicts_and_scores() -> None:
         ),
         verdicts=[make_verdict(patch_id=patch.id)],
         verification=verification,
+        hypothesis_from_budget_fallback=True,
     )
     label = InjectedFault(
         id=uuid4(),
@@ -85,6 +86,7 @@ def test_report_lists_nodes_verdicts_and_scores() -> None:
                 latency_ms=5,
                 attempt=1,
                 succeeded=True,
+                structured=True,
             ),
             LLMCall(
                 node="critic",
@@ -112,3 +114,21 @@ def test_report_lists_nodes_verdicts_and_scores() -> None:
     assert "score_root_cause" in text
     assert "score_fix" in text
     assert "wall_s=1.25" in text
+    assert "structured_success_rate triage=1.00 (1/1)" in text
+    assert "hypotheses_from_budget_fallback=1" in text
+    assert "fallback_used=True" in text
+    assert "remediation_kind=ESCALATE" in text
+    assert "tokens input=13 output=6" in text
+    blank = _report(
+        state.model_copy(
+            update={
+                "cases": {
+                    str(incident.id): case.model_copy(update={"dry_run": None}),
+                }
+            }
+        ),
+        wall_s=1.25,
+        clean=pd.DataFrame({"amount": [1.0]}),
+        label=label,
+    )
+    assert "dry_run=None" in blank

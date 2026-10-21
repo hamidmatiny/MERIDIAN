@@ -32,6 +32,7 @@ from meridian.contracts.state import MeridianState
 from meridian.graph.build import build_graph
 from meridian.injector.events import build_events, require_causal_event, write_events
 from meridian.injector.faults import INJECTORS
+from meridian.llm.capabilities import apply_methods, format_table, plan_nodes
 from meridian.llm.router import build_prepared
 from meridian.mcp_servers.client import StdioSession
 from meridian.pipeline.catalog import DATASETS, DEFAULT_ROWS
@@ -67,6 +68,11 @@ def main(argv: list[str] | None = None) -> int:
     except MeridianConfigError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    if args.live:
+        blocked = _capabilities(settings, chats)
+        if blocked is not None:
+            print(blocked, file=sys.stderr)
+            return 1
     fault = FaultType(args.fault)
     partition = DEFAULT_PARTITION_DATE
     with tempfile.TemporaryDirectory() as tmp_name:
@@ -217,6 +223,21 @@ def _prepare(
     )
 
 
+def _capabilities(settings: Settings, chats: PreparedChats) -> str | None:
+    """Print the capability table. Abort when a node has no usable method."""
+    rows, methods = plan_nodes(settings)
+    print(format_table(rows, methods), file=sys.stderr)
+    missing = [node for node, chosen in methods.items() if not any(chosen)]
+    if missing:
+        names = ", ".join(missing)
+        return f"aborted: no structured method for {names}"
+    apply_methods(chats.triage_chat, methods["triage"])
+    apply_methods(chats.root_chat, methods["rootcause"])
+    apply_methods(chats.fix_chat, methods["fix"])
+    apply_methods(chats.critic_chat, methods["critic"])
+    return None
+
+
 def _report(
     state: MeridianState,
     *,
@@ -238,6 +259,23 @@ def _report(
     for node, rows in by_node.items():
         lines.append(f"node {node}")
         lines.extend(f"  {row}" for row in rows)
+        used = any(call.fallback_used for call in state.llm_calls if call.node == node)
+        lines.append(f"  fallback_used={used}")
+    structured_ok: dict[str, int] = {}
+    structured_n: dict[str, int] = {}
+    for call in state.llm_calls:
+        if not call.structured:
+            continue
+        structured_n[call.node] = structured_n.get(call.node, 0) + 1
+        if call.succeeded:
+            structured_ok[call.node] = structured_ok.get(call.node, 0) + 1
+    for node, count in structured_n.items():
+        ok = structured_ok.get(node, 0)
+        lines.append(f"structured_success_rate {node}={ok / count:.2f} ({ok}/{count})")
+    fallback_hypotheses = sum(
+        1 for case in state.cases.values() if case.hypothesis_from_budget_fallback
+    )
+    lines.append(f"hypotheses_from_budget_fallback={fallback_hypotheses}")
     for case in state.cases.values():
         triage = case.triage
         severity = None
@@ -251,6 +289,10 @@ def _report(
                 f"hypothesis={hypothesis.id} mechanism={hypothesis.mechanism} "
                 f"grounding_violations={hypothesis.grounding_violations}"
             )
+        if case.patch is not None:
+            lines.append(f"remediation_kind={case.patch.remediation_kind.value}")
+        if case.dry_run is None:
+            lines.append("dry_run=None")
         if case.dry_run is not None:
             lines.append(
                 "dry_run "
@@ -289,6 +331,9 @@ def _report(
                 f"repaired_matches_clean={fix_score.repaired_matches_clean} "
                 f"rows_lost_pct={fix_score.rows_lost_pct}"
             )
+    incoming = sum(call.input_tokens for call in state.llm_calls)
+    outgoing = sum(call.output_tokens for call in state.llm_calls)
+    lines.append(f"tokens input={incoming} output={outgoing}")
     lines.append(f"wall_s={wall_s:.2f}")
     return "\n".join(lines)
 

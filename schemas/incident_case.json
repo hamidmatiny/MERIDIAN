@@ -858,6 +858,12 @@
       "default": null,
       "description": "Current root-cause hypothesis, if one has been proposed."
     },
+    "hypothesis_from_budget_fallback": {
+      "default": false,
+      "description": "True when the hypothesis is the tool-budget fallback.",
+      "title": "Hypothesis From Budget Fallback",
+      "type": "boolean"
+    },
     "incident": {
       "$ref": "#/$defs/Incident",
       "description": "The detected incident. Severity on it stays unset."

@@ -46,6 +46,7 @@ def make_llm_call(
     bound: object,
     tokens_before: int,
     tokens_after: int,
+    structured: bool = False,
 ) -> LLMCall:
     """Build one call record from the response and the bound client."""
     usage = read_usage(raw)
@@ -66,6 +67,7 @@ def make_llm_call(
         attempt=attempt,
         succeeded=succeeded,
         fallback_used=bool(getattr(bound, "fallback_used", False)),
+        structured=structured,
     )
 
 

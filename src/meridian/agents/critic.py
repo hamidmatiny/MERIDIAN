@@ -15,6 +15,7 @@ from meridian.contracts.verdict import Verdict
 from meridian.graph.limits import objection, record_verdict
 from meridian.llm.errors import RunAborted, call_model
 from meridian.llm.prompt_size import estimate_tokens, incident_json, tagged_human
+from meridian.llm.submit import output_method_of, run_submit_only
 from meridian.llm.usage import make_llm_call
 from meridian.prompts import CRITIC_PROMPT_NAME, CRITIC_PROMPT_VERSION, load_prompt
 
@@ -79,6 +80,27 @@ def run_critic(
     if case.patch is None:
         raise ValueError("critic runs after a patch")
     sent, uncut = render_critic_prompt(state)
+    messages: list[BaseMessage] = [
+        tagged_human(sent, before=estimate_tokens(uncut), after=estimate_tokens(sent))
+    ]
+    if output_method_of(chat) in {"submit_tool", "json_mode"}:
+        try:
+            parsed, calls = run_submit_only(
+                chat,
+                messages,
+                VerdictDraft,
+                tool_name="submit_verdict",
+                node=NODE,
+                model_name=model_name,
+                prompt_version=prompt_version,
+            )
+        except RunAborted as exc:
+            return {"aborted": True, "abort_reason": str(exc)}
+        draft = parsed if isinstance(parsed, VerdictDraft) else None
+        over_broad = case.dry_run is not None and case.dry_run.over_broad
+        verdict = _verdict(draft, case.patch.id, model_name, case.critic_rounds + 1, over_broad)
+        updated = record_verdict(case, verdict)
+        return {"cases": {key: updated}, "llm_calls": calls}
     structured = bind_structured(chat, VerdictDraft)
     try:
         draft, call = _invoke(
@@ -175,6 +197,7 @@ def _invoke(
         bound=bound,
         tokens_before=tokens_before,
         tokens_after=tokens_after,
+        structured=True,
     )
     return draft, call
 

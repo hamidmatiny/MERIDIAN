@@ -37,6 +37,10 @@ def test_status_classes() -> None:
     wrapped.response = response
     assert classify(wrapped) is ProviderFailure.TRANSIENT
     assert classify(TimeoutError("timed out")) is ProviderFailure.TRANSIENT
+    missing = RuntimeError("structured output is unavailable")
+    missing.status_code = 501
+    assert classify(missing) is ProviderFailure.UNSUPPORTED
+    assert classify(RuntimeError("model does not support tools")) is ProviderFailure.UNSUPPORTED
     assert classify(ValueError("schema")) is ProviderFailure.BAD_OUTPUT
 
 

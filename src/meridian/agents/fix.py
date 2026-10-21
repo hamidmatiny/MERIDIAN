@@ -29,6 +29,7 @@ from meridian.graph.limits import (
 )
 from meridian.llm.errors import RunAborted, call_model
 from meridian.llm.prompt_size import estimate_tokens, incident_json, tagged_human
+from meridian.llm.submit import output_method_of, run_submit_only, run_tool_loop
 from meridian.llm.usage import make_llm_call
 from meridian.mcp_servers.client import invoke_tool
 from meridian.prompts import FIX_PROMPT_NAME, FIX_PROMPT_VERSION, load_prompt
@@ -143,6 +144,16 @@ def _loop(
     prompt_version: str,
     max_tool_calls: int,
 ) -> tuple[PatchDraft | None, list[LLMCall], list[ToolCall]]:
+    if output_method_of(chat) == "submit_tool":
+        return _submit_fix(
+            prompt,
+            uncut,
+            chat=chat,
+            tools=tools,
+            model_name=model_name,
+            prompt_version=prompt_version,
+            max_tool_calls=max_tool_calls,
+        )
     tools_by_name = {tool.name: tool for tool in tools}
     bound = chat.bind_tools(tools)
     messages: list[BaseMessage] = [
@@ -168,6 +179,18 @@ def _loop(
         tool_calls.append(record)
         messages.append(ToolMessage(content=payload, tool_call_id=call_id, name=name))
         steps += 1
+    if output_method_of(chat) == "json_mode":
+        parsed, extra = run_submit_only(
+            chat,
+            messages,
+            PatchDraft,
+            tool_name="submit_patch",
+            node=NODE,
+            model_name=model_name,
+            prompt_version=prompt_version,
+        )
+        draft = parsed if isinstance(parsed, PatchDraft) else None
+        return draft, [*llm_calls, *extra], tool_calls
     structured = bind_structured(chat, PatchDraft)
     draft, call = _invoke_structured(
         structured,
@@ -178,6 +201,37 @@ def _loop(
     )
     llm_calls.append(call)
     return draft, llm_calls, tool_calls
+
+
+def _submit_fix(
+    prompt: str,
+    uncut: str,
+    *,
+    chat: ToolChat,
+    tools: list[BaseTool],
+    model_name: str,
+    prompt_version: str,
+    max_tool_calls: int,
+) -> tuple[PatchDraft | None, list[LLMCall], list[ToolCall]]:
+    """Propose a patch by calling submit_patch. The last turn binds only that tool."""
+    human = tagged_human(prompt, before=estimate_tokens(uncut), after=estimate_tokens(prompt))
+    parsed, calls, records, payloads = run_tool_loop(
+        chat,
+        [human],
+        PatchDraft,
+        tool_name="submit_patch",
+        mcp_tools=tools,
+        node=NODE,
+        model_name=model_name,
+        prompt_version=prompt_version,
+        max_tool_calls=max_tool_calls,
+    )
+    updated: list[ToolCall] = []
+    for record, payload in zip(records, payloads, strict=True):
+        found = collect_refs(payload)
+        updated.append(record.model_copy(update={"ref_count": len(found)}))
+    draft = parsed if isinstance(parsed, PatchDraft) else None
+    return draft, calls, updated
 
 
 def _patch(
@@ -280,6 +334,7 @@ def _invoke_structured(
         bound,
         tokens_before,
         tokens_after,
+        structured=True,
     )
 
 
@@ -322,6 +377,7 @@ def _call(
     bound: object,
     tokens_before: int,
     tokens_after: int,
+    structured: bool = False,
 ) -> LLMCall:
     message = raw.get("raw") if isinstance(raw, dict) else raw
     return make_llm_call(
@@ -335,6 +391,7 @@ def _call(
         bound=bound,
         tokens_before=tokens_before,
         tokens_after=tokens_after,
+        structured=structured,
     )
 
 
