@@ -94,6 +94,24 @@ def approval_blocks(view: ApprovalView, thread_id: str) -> list[dict[str, object
     return blocks
 
 
+def wall_blocks(view: ApprovalView, run_id: str) -> list[dict[str, object]]:
+    """An escalation with no buttons. A wall abort is not waiting for a click."""
+    blocks = _context(view, "Escalation")
+    blocks.append(_section(f"WALL_BUDGET run={run_id}. The run stopped and needs a person."))
+    return blocks
+
+
+def wall_notice_blocks(run_id: str) -> list[dict[str, object]]:
+    """Used when the budget expires before Sentinel opens an incident."""
+    return [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": "Escalation WALL_BUDGET"},
+        },
+        _section(f"run={run_id} hit the wall budget before an incident was opened."),
+    ]
+
+
 def escalation_blocks(view: ApprovalView, thread_id: str) -> list[dict[str, object]]:
     """Acknowledge only. There is no approve path."""
     blocks = _context(view, "Escalation")

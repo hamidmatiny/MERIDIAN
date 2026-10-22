@@ -20,6 +20,7 @@ Every finished case writes `docs/postmortems/<incident_id>.md` from a fixed temp
 - A rejection leaves no remediation directory. The postmortem still records the comment.
 - The postmortem is reproducible from the case. Running it twice overwrites the same file with the same text.
 - The applied directory is not a merge, so a later review can still refuse the files.
+- The applied Python is the model's source. Ruff does not restyle it.
 
 ## Alternatives considered
 

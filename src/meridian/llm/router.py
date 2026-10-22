@@ -5,8 +5,8 @@ Paid providers are absent from that default. They run only when
 name one model: ``auto`` and combo names are rejected so a benchmark can be repeated.
 """
 
+import threading
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from pydantic import SecretStr
@@ -16,9 +16,12 @@ from meridian.llm.budget import PAID, Budget, BudgetError, open_budget
 from meridian.llm.errors import AbortGate, ProviderFailure, RunAborted, classify, is_timeout
 from meridian.llm.prompt_size import estimate_tokens
 from meridian.llm.usage import TimeoutNote, read_usage
+from meridian.progress import HEARTBEAT_S, heartbeat
+from meridian.wall import WallClock
 
 _PROVIDERS = frozenset({"ollama", "omniroute", "anthropic", "xai", "fake"})
 _NODES = ("triage", "rootcause", "fix", "critic")
+_PROGRESS_NODE = {"triage": "triage", "rootcause": "root_cause", "fix": "fix", "critic": "critic"}
 _DEFAULT_CHAIN = "ollama,omniroute"
 
 
@@ -46,6 +49,9 @@ class FallbackChat:
         seed: int = 42,
         deadline: float | None = None,
         call_timeout_s: float | None = None,
+        clock: WallClock | None = None,
+        node: str = "",
+        heartbeat_s: float = HEARTBEAT_S,
     ) -> None:
         if not hops:
             raise MeridianConfigError("LLM", ["a provider chain"])
@@ -64,6 +70,9 @@ class FallbackChat:
         self.seed = seed
         self.deadline = deadline
         self.call_timeout_s = call_timeout_s
+        self.clock = clock
+        self.node = node
+        self.heartbeat_s = heartbeat_s
         self.think = bool(getattr(hops[0].client, "reasoning", False))
         self.timeouts: list[TimeoutNote] = []
         self.last_latency_ms = 0
@@ -88,6 +97,8 @@ class FallbackChat:
         for index, hop in enumerate(self.hops):
             for attempt in range(3):
                 self.gate.check()
+                if self.clock is not None and self.clock.expired():
+                    raise RunAborted("WALL_BUDGET", "run wall budget exceeded")
                 if self.deadline is not None and _now() >= self.deadline:
                     raise RunAborted("WALL_BUDGET", "run wall budget exceeded")
                 started = _now()
@@ -138,16 +149,55 @@ class FallbackChat:
 
     def _bounded(self, action: Callable[[Hop], Any], hop: Hop) -> Any:
         """Stop the call at the deadline, including a stream that keeps sending tokens."""
-        if self.call_timeout_s is None:
+        if self.call_timeout_s is None and self.clock is None:
             return action(hop)
-        pool = ThreadPoolExecutor(max_workers=1)
-        future = pool.submit(action, hop)
-        try:
-            return future.result(timeout=self.call_timeout_s)
-        except TimeoutError as exc:
-            raise TimeoutError("timed out") from exc
-        finally:
-            pool.shutdown(wait=False, cancel_futures=True)
+        if self.clock is not None:
+            self.clock.check()
+        done = threading.Event()
+        outcome: list[Any] = []
+        problem: list[BaseException] = []
+
+        def _run() -> None:
+            try:
+                outcome.append(action(hop))
+            except BaseException as exc:
+                problem.append(exc)
+            finally:
+                done.set()
+
+        threading.Thread(target=_run, name="meridian-llm", daemon=True).start()
+        started = _now()
+        last_beat = started
+        while not done.is_set():
+            if self.clock is not None and self.clock.expired():
+                self.clock.trip()
+                raise RunAborted("WALL_BUDGET", "run wall budget exceeded")
+            if self.call_timeout_s is not None and _now() - started >= self.call_timeout_s:
+                raise TimeoutError("timed out")
+            step = self._slice(started)
+            if step <= 0:
+                if self.clock is not None and self.clock.expired():
+                    self.clock.trip()
+                    raise RunAborted("WALL_BUDGET", "run wall budget exceeded")
+                raise TimeoutError("timed out")
+            done.wait(step)
+            if self.node and _now() - last_beat >= self.heartbeat_s:
+                elapsed = self.clock.elapsed() if self.clock is not None else _now() - started
+                heartbeat(self.node, hop.model, elapsed)
+                last_beat = _now()
+        if problem:
+            raise problem[0]
+        return outcome[0]
+
+    def _slice(self, started: float) -> float:
+        step = 0.25
+        if self.node and self.heartbeat_s > 0:
+            step = min(step, self.heartbeat_s)
+        if self.call_timeout_s is not None:
+            step = min(step, max(self.call_timeout_s - (_now() - started), 0.0))
+        if self.clock is not None:
+            step = min(step, self.clock.remaining())
+        return step
 
     def _account(self, hop: Hop, result: object, index: int) -> None:
         self.provider_name = hop.provider
@@ -242,6 +292,8 @@ def build_node_chat(
     gate: AbortGate | None = None,
     budget: Budget | None = None,
     sleeper: Callable[[float], None] | None = None,
+    clock: WallClock | None = None,
+    heartbeat_s: float = HEARTBEAT_S,
 ) -> tuple[FallbackChat, str]:
     """Build the chat for one node. The recorded model name is the primary hop."""
     if node not in _NODES:
@@ -269,8 +321,15 @@ def build_node_chat(
         sleeper=sleeper,
         temperature=0,
         seed=settings.llm_seed,
-        deadline=_now() + settings.run_wall_budget_s,
+        deadline=(
+            _now() + settings.run_wall_budget_s
+            if clock is None
+            else clock.started + settings.run_wall_budget_s
+        ),
         call_timeout_s=settings.llm_timeout_s,
+        clock=clock,
+        node=_PROGRESS_NODE[node],
+        heartbeat_s=heartbeat_s,
     )
     return chat, hops[0][1]
 
@@ -278,11 +337,26 @@ def build_node_chat(
 NodeChat = tuple[FallbackChat, str]
 
 
-def build_prepared(settings: Settings) -> tuple[NodeChat, NodeChat, NodeChat, NodeChat]:
-    """Four node chats that share one abort gate and one budget."""
+def build_prepared(
+    settings: Settings,
+    *,
+    clock: WallClock | None = None,
+    heartbeat_s: float = HEARTBEAT_S,
+) -> tuple[NodeChat, NodeChat, NodeChat, NodeChat]:
+    """Four node chats that share one abort gate, one budget, and one wall clock."""
     gate = AbortGate()
     budget = _budget(settings)
-    built = tuple(build_node_chat(settings, node, gate=gate, budget=budget) for node in _NODES)
+    built = tuple(
+        build_node_chat(
+            settings,
+            node,
+            gate=gate,
+            budget=budget,
+            clock=clock,
+            heartbeat_s=heartbeat_s,
+        )
+        for node in _NODES
+    )
     return built[0], built[1], built[2], built[3]
 
 

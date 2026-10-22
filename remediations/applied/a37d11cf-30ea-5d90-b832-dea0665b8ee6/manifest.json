@@ -1,0 +1,22 @@
+{
+  "approver": "U0CAQ22LVL1",
+  "decided_at": "2026-10-22T22:57:33.927707+00:00",
+  "patch_id": "4541295c-43a2-5e62-a0ca-137794f1ff8c",
+  "verifier_checks": [
+    {
+      "name": "contracts",
+      "passed": true,
+      "detail": "0 incident(s) remain"
+    },
+    {
+      "name": "regression_test",
+      "passed": true,
+      "detail": "regression test passed"
+    },
+    {
+      "name": "quarantine_fraction",
+      "passed": true,
+      "detail": "quarantined 0.100; cap 0.250"
+    }
+  ]
+}

@@ -26,17 +26,12 @@ from meridian.contracts.severity import SEVERITY_RANK
 from meridian.contracts.state import MeridianState
 from meridian.graph.limits import route_after_root
 from meridian.llm.errors import AbortGate, RunAborted, unwrap_abort
+from meridian.progress import node_line
 from meridian.prompts import TRIAGE_PROMPT_VERSION
 from meridian.slack.gate import ApprovalPorts, run_approval, run_postmortem
+from meridian.wall import WallClock, call_bounded
 
 logger = logging.getLogger("meridian.graph")
-
-
-def _clock() -> float:
-    import time
-
-    return time.monotonic()
-
 
 ToolLoader = Callable[[], list[BaseTool]]
 
@@ -89,6 +84,48 @@ def _wall(
     return {"aborted": True, "abort_reason": "WALL_BUDGET"}
 
 
+def _case_label(state: MeridianState) -> str:
+    if len(state.cases) != 1:
+        return "-"
+    return next(iter(state.cases))
+
+
+def _attempt_no(node: str, state: MeridianState) -> int:
+    if len(state.cases) != 1:
+        return 1
+    case = next(iter(state.cases.values()))
+    if node == "fix":
+        return case.fix_attempts + 1
+    if node == "critic":
+        return case.critic_rounds + 1
+    return 1
+
+
+def _trace(
+    clock: WallClock,
+    node: str,
+    state: MeridianState,
+    body: Callable[[], dict[str, object]],
+) -> dict[str, object]:
+    """Log the node, then run it. A wall abort still gets an end line."""
+    case = _case_label(state)
+    attempt = _attempt_no(node, state)
+    node_line(state.run_id, case, node, attempt, clock.elapsed(), "start")
+    try:
+        result = body()
+    except Exception as exc:
+        if type(exc).__name__ != "GraphInterrupt":
+            node_line(state.run_id, case, node, attempt, clock.elapsed(), "end")
+        raise
+    node_line(state.run_id, case, node, attempt, clock.elapsed(), "end")
+    return result
+
+
+def _limited(clock: WallClock, action: Callable[[], dict[str, object]]) -> dict[str, object]:
+    """Poll the wall clock so a blocked node is abandoned."""
+    return call_bounded(action, clock)
+
+
 def _as_state(state: object) -> MeridianState:
     """Accept the model LangGraph passes, or the dict a Send branch delivers."""
     if isinstance(state, MeridianState):
@@ -126,6 +163,7 @@ def build_graph(
     psi_min_rows: int = 200,
     approval: bool = False,
     approval_ports: ApprovalPorts | None = None,
+    wall_clock: WallClock | None = None,
 ) -> CompiledStateGraph[MeridianState, None, MeridianState, MeridianState]:
     """Compile Sentinel → Triage → RootCause → Fix → Critic → Verifier.
 
@@ -142,10 +180,10 @@ def build_graph(
     chosen_critic = critic_model if critic_chat is None else critic_chat
     chosen_critic_name = critic_model.model_name if critic_model_name is None else critic_model_name
     gate = AbortGate()
-    started = _clock()
+    clock = wall_clock if wall_clock is not None else WallClock(wall_budget_s)
 
     def _over() -> bool:
-        return _clock() - started >= wall_budget_s
+        return clock.expired()
 
     def _human(state: MeridianState) -> dict[str, object]:
         cases = {
@@ -154,21 +192,37 @@ def build_graph(
         return {"aborted": True, "abort_reason": "WALL_BUDGET", "cases": cases}
 
     def sentinel(state: MeridianState) -> dict[str, object]:
-        return run_sentinel(state, num_cpus=num_cpus, detected_at=moment)
+        def node(current: MeridianState) -> dict[str, object]:
+            def body() -> dict[str, object]:
+                if clock.expired():
+                    return run_sentinel(current, num_cpus=num_cpus, detected_at=moment)
+                return _limited(
+                    clock,
+                    lambda: run_sentinel(current, num_cpus=num_cpus, detected_at=moment),
+                )
+
+            return _trace(clock, "sentinel", current, body)
+
+        return _guard(gate, state, node, human=_human)
 
     def triage(state: MeridianState) -> dict[str, object]:
-        return _guard(
-            gate,
-            state,
-            lambda current: run_triage(
+        def node(current: MeridianState) -> dict[str, object]:
+            return _trace(
+                clock,
+                "triage",
                 current,
-                model_name=model_name,
-                chat=chat,
-                prompt_version=TRIAGE_PROMPT_VERSION,
-            ),
-            over=_over,
-            human=_human,
-        )
+                lambda: _limited(
+                    clock,
+                    lambda: run_triage(
+                        current,
+                        model_name=model_name,
+                        chat=chat,
+                        prompt_version=TRIAGE_PROMPT_VERSION,
+                    ),
+                ),
+            )
+
+        return _guard(gate, state, node, over=_over, human=_human)
 
     def dispatch(state: MeridianState) -> dict[str, object]:
         del state
@@ -180,13 +234,21 @@ def build_graph(
             resolved = tool_loader()
 
         def _run(current: MeridianState) -> dict[str, object]:
-            return run_root_cause(
+            return _trace(
+                clock,
+                "root_cause",
                 current,
-                model_name=root_model_name,
-                chat=root_chat,
-                tools=resolved,
-                max_tool_calls=max_tool_calls,
-                evidence_root=evidence_root,
+                lambda: _limited(
+                    clock,
+                    lambda: run_root_cause(
+                        current,
+                        model_name=root_model_name,
+                        chat=root_chat,
+                        tools=resolved,
+                        max_tool_calls=max_tool_calls,
+                        evidence_root=evidence_root,
+                    ),
+                ),
             )
 
         return _guard(gate, state, _run, over=_over, human=_human)
@@ -197,62 +259,87 @@ def build_graph(
             resolved = tool_loader()
 
         def _run(current: MeridianState) -> dict[str, object]:
-            return run_fix(
+            return _trace(
+                clock,
+                "fix",
                 current,
-                model_name=chosen_fix_name,
-                chat=chosen_fix,
-                tools=resolved,
-                max_tool_calls=max_tool_calls,
-                max_row_loss=max_row_loss,
-                max_quarantine=max_quarantine,
+                lambda: _limited(
+                    clock,
+                    lambda: run_fix(
+                        current,
+                        model_name=chosen_fix_name,
+                        chat=chosen_fix,
+                        tools=resolved,
+                        max_tool_calls=max_tool_calls,
+                        max_row_loss=max_row_loss,
+                        max_quarantine=max_quarantine,
+                    ),
+                ),
             )
 
         return _guard(gate, state, _run, over=_over, human=_human)
 
     def pre_critic(state: MeridianState) -> dict[str, object]:
-        current = _as_state(state)
-        if _over():
-            return _wall(gate, current, _human)
-        if gate.reason is not None or current.aborted:
-            reason = gate.reason or current.abort_reason or "aborted"
-            gate.trip(reason)
-            return {"aborted": True, "abort_reason": reason}
-        return run_pre_critic(
-            current,
-            num_cpus=num_cpus,
-            timeout_s=sandbox_timeout_s,
-            memory_mb=sandbox_memory_mb,
-            sample_seed=sample_seed,
-            psi_min_rows=psi_min_rows,
-        )
+        def node(current: MeridianState) -> dict[str, object]:
+            return _trace(
+                clock,
+                "pre_critic",
+                current,
+                lambda: _limited(
+                    clock,
+                    lambda: run_pre_critic(
+                        current,
+                        num_cpus=num_cpus,
+                        timeout_s=sandbox_timeout_s,
+                        memory_mb=sandbox_memory_mb,
+                        sample_seed=sample_seed,
+                        psi_min_rows=psi_min_rows,
+                    ),
+                ),
+            )
+
+        return _guard(gate, state, node, over=_over, human=_human)
 
     def critic(state: MeridianState) -> dict[str, object]:
-        return _guard(
-            gate,
-            state,
-            lambda current: run_critic(
+        def node(current: MeridianState) -> dict[str, object]:
+            return _trace(
+                clock,
+                "critic",
                 current,
-                model_name=chosen_critic_name,
-                chat=chosen_critic,
-            ),
-            over=_over,
-            human=_human,
-        )
+                lambda: _limited(
+                    clock,
+                    lambda: run_critic(
+                        current,
+                        model_name=chosen_critic_name,
+                        chat=chosen_critic,
+                    ),
+                ),
+            )
+
+        return _guard(gate, state, node, over=_over, human=_human)
 
     def verifier(state: MeridianState) -> dict[str, object]:
-        current = _as_state(state)
-        if _over():
-            return _wall(gate, current, _human)
-        return run_verifier(
-            current,
-            num_cpus=num_cpus,
-            timeout_s=sandbox_timeout_s,
-            memory_mb=sandbox_memory_mb,
-            max_row_loss=max_row_loss,
-            max_quarantine=max_quarantine,
-            max_outside_change=max_outside_change,
-            psi_min_rows=psi_min_rows,
-        )
+        def node(current: MeridianState) -> dict[str, object]:
+            return _trace(
+                clock,
+                "verifier",
+                current,
+                lambda: _limited(
+                    clock,
+                    lambda: run_verifier(
+                        current,
+                        num_cpus=num_cpus,
+                        timeout_s=sandbox_timeout_s,
+                        memory_mb=sandbox_memory_mb,
+                        max_row_loss=max_row_loss,
+                        max_quarantine=max_quarantine,
+                        max_outside_change=max_outside_change,
+                        psi_min_rows=psi_min_rows,
+                    ),
+                ),
+            )
+
+        return _guard(gate, state, node, over=_over, human=_human)
 
     graph: StateGraph[MeridianState, None, MeridianState, MeridianState] = StateGraph(MeridianState)
     graph.add_node("sentinel", sentinel)
@@ -273,14 +360,18 @@ def build_graph(
         ports = approval_ports
 
         def slack_approval(state: MeridianState) -> dict[str, object]:
-            return run_approval(_as_state(state), ports)
+            current = _as_state(state)
+            return _trace(clock, "slack_approval", current, lambda: run_approval(current, ports))
 
         def postmortem(state: MeridianState) -> dict[str, object]:
-            return run_postmortem(_as_state(state), ports)
+            current = _as_state(state)
+            return _trace(clock, "postmortem", current, lambda: run_postmortem(current, ports))
 
         graph.add_node("slack_approval", slack_approval)
         graph.add_node("postmortem", postmortem)
-        graph.add_edge("slack_approval", "postmortem")
+        graph.add_node("route_slack", _wait, defer=True)
+        graph.add_edge("slack_approval", "route_slack")
+        graph.add_conditional_edges("route_slack", _to_postmortem, ["postmortem", END])
         graph.add_edge("postmortem", END)
     tail: list[str] = ["slack_approval", END] if approval else [END]
     graph.add_edge(START, "sentinel")
@@ -389,6 +480,14 @@ def _escalate_open(case: IncidentCase) -> bool:
         and case.patch.remediation_kind is RemediationKind.ESCALATE
         and case.verification is None
     )
+
+
+def _to_postmortem(state: MeridianState) -> list[Send] | str:
+    """One postmortem branch per incident. A joined wall abort has more than one."""
+    pending = [(key, case) for key, case in state.cases.items() if case.postmortem is None]
+    if not pending:
+        return END
+    return [Send("postmortem", _branch(state, key, case)) for key, case in pending]
 
 
 def _with_slack(

@@ -194,8 +194,8 @@ def test_cli_rejects_intensity_and_seed_outside_range() -> None:
 
 
 def test_live_chat_uses_the_configured_model(monkeypatch) -> None:
-    def _prepared(settings: Settings) -> tuple[tuple[str, str], ...]:
-        del settings
+    def _prepared(settings: Settings, **_kwargs: object) -> tuple[tuple[str, str], ...]:
+        del settings, _kwargs
         return (
             ("triage-client", "configured-model"),
             ("root-client", "configured-root"),

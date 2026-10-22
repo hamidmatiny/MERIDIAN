@@ -2,7 +2,7 @@
 
 MERIDIAN is being built to detect data-quality failures, explain them, propose a fix, verify that fix against the failing data, and ask a human in Slack before anything merges. The path is a fixed LangGraph state machine. The goal is to shorten the time from incident to a verified, approved fix.
 
-This repository has Phases 0 through 4: contracts, the injector, Sentinel → Triage, root cause, and the Fix → Critic → Verifier loop. Phase 5 (Slack approval and the postmortem) is in progress. Unit tests do not call a model or Slack.
+This repository has Phases 0 through 4: contracts, the injector, Sentinel → Triage, root cause, and the Fix → Critic → Verifier loop. Phase 5 (Slack approval and the postmortem) is in progress. The run wall budget starts when the CLI process starts, and a watchdog aborts a blocked call. Unit tests do not call a model or Slack.
 
 ## Target agent graph
 

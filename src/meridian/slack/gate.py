@@ -20,6 +20,8 @@ from meridian.slack.blocks import (
     case_view,
     decided_blocks,
     escalation_blocks,
+    wall_blocks,
+    wall_notice_blocks,
 )
 from meridian.slack.gateway import SlackGateway
 from meridian.slack.report import build_postmortem, render_markdown
@@ -37,8 +39,30 @@ class ApprovalPorts:
     open_index: OpenIndex
 
 
+def post_wall_escalation(ports: ApprovalPorts, state: MeridianState | None, run_id: UUID) -> None:
+    """One Escalation, with no buttons. A second call with the same run id is a no-op."""
+    if state is not None and len(state.cases) == 1:
+        case = next(iter(state.cases.values()))
+        blocks = wall_blocks(case_view(case), str(run_id))
+    else:
+        blocks = wall_notice_blocks(str(run_id))
+    ports.gateway.post_once(
+        key=f"wall:{run_id}",
+        channel=ports.channel,
+        text="Escalation",
+        blocks=blocks,
+    )
+
+
 def run_approval(state: MeridianState, ports: ApprovalPorts) -> dict[str, object]:
     """Post the request, then stop until a person or the timeout resumes the graph."""
+    if state.aborted and state.abort_reason == "WALL_BUDGET":
+        post_wall_escalation(ports, state, state.run_id)
+        if len(state.cases) != 1:
+            return {}
+        key, case = next(iter(state.cases.items()))
+        updated = case.model_copy(update={"needs_human": True})
+        return {"cases": {key: updated}}
     if len(state.cases) != 1:
         raise ValueError("approval handles one incident")
     key, case = next(iter(state.cases.items()))

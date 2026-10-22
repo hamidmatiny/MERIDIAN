@@ -2,14 +2,14 @@
 
 import argparse
 import json
+import logging
 import math
 import sys
 import tempfile
-import time
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import numpy as np
 import pandas as pd
@@ -36,6 +36,7 @@ from meridian.graph.build import build_graph
 from meridian.injector.events import build_events, require_causal_event, write_events
 from meridian.injector.faults import INJECTORS
 from meridian.llm.capabilities import apply_methods, format_table, plan_nodes
+from meridian.llm.errors import RunAborted
 from meridian.llm.resident import budget_problem, read_ollama_sizes, size_report
 from meridian.llm.router import build_prepared
 from meridian.mcp_servers.client import StdioSession
@@ -44,6 +45,9 @@ from meridian.pipeline.generate import DEFAULT_PARTITION_DATE, generate_dataset
 from meridian.pipeline.parquet import write_parquet
 from meridian.quality.freshness import late_arrival, on_time_arrival
 from meridian.quality.reference import fit_reference_profile
+from meridian.wall import WallClock, call_bounded
+
+logger = logging.getLogger("meridian.run")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -71,9 +75,42 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("intensity must be in the interval [0, 1]")
     if args.seed < 0:
         parser.error("seed must be >= 0")
+    _configure_logging()
     try:
         settings = get_settings()
-        chats = _chat(settings, live=args.live)
+    except MeridianConfigError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    clock = WallClock(settings.run_wall_budget_s)
+    run_id = uuid4()
+    clock.start()
+    try:
+        return _execute(args, settings, clock, run_id)
+    except RunAborted as exc:
+        clock.disarm()
+        if exc.kind != "WALL_BUDGET":
+            raise
+        print("aborted: WALL_BUDGET", file=sys.stderr)
+        if args.slack:
+            try:
+                _post_wall(settings, run_id)
+            except Exception as post_exc:
+                print(f"wall escalation was not posted: {post_exc}", file=sys.stderr)
+        print(json.dumps({"status": "aborted", "reason": "WALL_BUDGET"}))
+        return 1
+    finally:
+        clock.stop()
+
+
+def _execute(
+    args: argparse.Namespace,
+    settings: Settings,
+    clock: WallClock,
+    run_id: UUID,
+) -> int:
+    """Probes, the partition, and the graph. The wall clock is already running."""
+    try:
+        chats = call_bounded(lambda: _chat(settings, live=args.live, clock=clock), clock)
     except MeridianConfigError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -87,13 +124,13 @@ def main(argv: list[str] | None = None) -> int:
             print("MERIDIAN_SLACK_APPROVERS is empty", file=sys.stderr)
             return 2
     if args.live:
-        sizes = read_ollama_sizes()
+        sizes = call_bounded(read_ollama_sizes, clock)
         print(size_report(settings, sizes), file=sys.stderr)
         problem = budget_problem(settings, sizes)
         if problem is not None:
             print(problem, file=sys.stderr)
             return 1
-        blocked = _capabilities(settings, chats)
+        blocked = call_bounded(lambda: _capabilities(settings, chats), clock)
         if blocked is not None:
             print(blocked, file=sys.stderr)
             return 1
@@ -101,18 +138,28 @@ def main(argv: list[str] | None = None) -> int:
     partition = DEFAULT_PARTITION_DATE
     with tempfile.TemporaryDirectory() as tmp_name:
         root = Path(tmp_name)
-        prepared = _prepare(
-            root,
-            dataset=args.dataset,
-            fault=fault,
-            intensity=args.intensity,
-            seed=args.seed,
-            rows=args.rows,
-            partition=partition,
+        prepared = call_bounded(
+            lambda: _prepare(
+                root,
+                dataset=args.dataset,
+                fault=fault,
+                intensity=args.intensity,
+                seed=args.seed,
+                rows=args.rows,
+                partition=partition,
+            ),
+            clock,
         )
-        started = time.perf_counter()
-        state = _invoke(settings, chats, prepared.ref, root, slack=args.slack)
-        wall_s = time.perf_counter() - started
+        state = _invoke(
+            settings,
+            chats,
+            prepared.ref,
+            root,
+            slack=args.slack,
+            clock=clock,
+            run_id=run_id,
+        )
+        wall_s = clock.elapsed()
     if state is None:
         print("waiting for Slack approval", file=sys.stderr)
         print(json.dumps({"status": "waiting_for_slack"}))
@@ -152,7 +199,7 @@ class PreparedChats:
     critic_model: str
 
 
-def _chat(settings: Settings, *, live: bool) -> PreparedChats:
+def _chat(settings: Settings, *, live: bool, clock: WallClock | None = None) -> PreparedChats:
     if not live:
         triage = FakeTriageModel()
         root = HeuristicRootCauseModel()
@@ -168,7 +215,7 @@ def _chat(settings: Settings, *, live: bool) -> PreparedChats:
             critic,
             critic.model_name,
         )
-    built = build_prepared(settings)
+    built = build_prepared(settings, clock=clock)
     return PreparedChats(
         built[0][0],
         built[0][1],
@@ -443,6 +490,8 @@ def _invoke(
     evidence_root: Path,
     *,
     slack: bool = False,
+    clock: WallClock,
+    run_id: UUID,
 ) -> MeridianState | None:
     import ray
 
@@ -483,18 +532,60 @@ def _invoke(
                 psi_min_rows=settings.psi_min_rows,
                 approval=slack,
                 approval_ports=ports,
+                wall_clock=clock,
             )
-            run_id = uuid4()
             thread = {"configurable": {"thread_id": str(run_id)}}
-            result = graph.invoke(  # type: ignore[call-overload]
-                MeridianState(run_id=run_id, partitions=[ref]),
-                thread,
-            )
+            clock.disarm()
+            try:
+                result = graph.invoke(  # type: ignore[call-overload]
+                    MeridianState(run_id=run_id, partitions=[ref]),
+                    thread,
+                )
+            except RunAborted as exc:
+                if exc.kind == "WALL_BUDGET":
+                    _checkpoint_wall(graph, thread)
+                    if ports is not None:
+                        from meridian.slack.gate import post_wall_escalation
+
+                        post_wall_escalation(ports, None, run_id)
+                raise
+            finally:
+                clock.arm()
             if graph.get_state(thread).next:  # type: ignore[arg-type]
                 return None
         return MeridianState.model_validate(result)
     finally:
         ray.shutdown()
+
+
+def _checkpoint_wall(graph: object, thread: dict[str, dict[str, str]]) -> None:
+    """Persist the abort when the signal lands outside a node return."""
+    update = getattr(graph, "update_state", None)
+    if not callable(update):
+        return
+    try:
+        update(thread, {"aborted": True, "abort_reason": "WALL_BUDGET"})
+    except Exception as exc:
+        logger.warning("wall checkpoint was not updated: %s", exc)
+
+
+def _post_wall(settings: Settings, run_id: UUID) -> None:
+    from meridian.slack.gate import post_wall_escalation
+    from meridian.slack.runtime import ports_for
+
+    post_wall_escalation(ports_for(settings), None, run_id)
+
+
+def _configure_logging() -> None:
+    """stderr only. stdout stays the final state JSON."""
+    log = logging.getLogger("meridian")
+    if log.handlers:
+        return
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    log.addHandler(handler)
+    log.setLevel(logging.INFO)
+    log.propagate = False
 
 
 if __name__ == "__main__":
