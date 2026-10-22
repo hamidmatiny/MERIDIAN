@@ -16,6 +16,8 @@ Freshness is separate from pandera. `PartitionMetadata.arrived_at` is late when 
 
 Range checks and the trip speed/distance check map to `UNIT_MISMATCH`. Nullability maps to `NULL_EXPLOSION`. Uniqueness maps to `DUPLICATE_KEYS`. Dtype and column presence map to `SCHEMA_DRIFT`. The PSI check names and `partition_arrival_sla` map to `DISTRIBUTION_SHIFT` and `LATE_PARTITION`.
 
+PSI is skipped when the scored frame has fewer than `MERIDIAN_PSI_MIN_ROWS` rows. The default is 200. The skip is recorded as `skipped_insufficient_rows` on the verifier's `psi` check. It is not reported as `under threshold`, and `evaluate` does not emit a `DISTRIBUTION_SHIFT` for that frame. At or above the floor, PSI is unchanged.
+
 ## Consequences
 
 - A column can move a lot inside its legal range and still fail only PSI, when the profile was fit on a different clean partition. The distribution-shift injector is written to do that.
@@ -23,6 +25,7 @@ Range checks and the trip speed/distance check map to `UNIT_MISMATCH`. Nullabili
 - A unit conversion that also exceeds a range check is still one fault type, because both checks are in the `UNIT_MISMATCH` row of the table.
 - Adding a pandera check without a table entry fails closed at evaluation time.
 - The threshold and the SLA are arguments, not constants buried in a check body. The defaults are 0.2 and 2 hours.
+- PSI on a frame smaller than `MERIDIAN_PSI_MIN_ROWS` (default 200) is not scored. The verifier records a `psi` check whose detail is `skipped_insufficient_rows`. That detail is the skip. It is not an "under threshold" pass. A frame at or above the floor is scored exactly as before. The floor exists because an 80-row `NULL_EXPLOSION` quarantine on `fleet_daily_kpi` (seed 42, intensity 0.1) left 72 rows and one `DISTRIBUTION_SHIFT` on `psi_total_distance_km` (PSI 0.46 against a profile fit on 80 rows). The nulls were gone. The remaining incident was the small-sample PSI.
 
 ## Alternatives considered
 
@@ -30,3 +33,4 @@ Range checks and the trip speed/distance check map to `UNIT_MISMATCH`. Nullabili
 - Kolmogorov-Smirnov against the same profile. Rejected in favor of PSI, which is the usual quantile-bin summary for data drift and is easy to explain next to a 0.2 cutoff.
 - Building the bins with `linspace` on the generator's published interval. Rejected. Those bounds are not available for a real pipeline, and using them here would score the simulator against itself.
 - Inferring the fault type from the check name with prefixes or keywords. Rejected. The table is the contract between the checks and `Incident.fault_type`.
+- Treating a small-sample PSI miss as a passed `under threshold` check. Rejected. The record has to say the score was not computed.

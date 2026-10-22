@@ -185,3 +185,16 @@ def test_rootcause_defaults_to_eight_tool_calls(monkeypatch: pytest.MonkeyPatch)
     assert settings.rootcause_max_tool_calls == 8
     blank = Settings(_env_file=None, rootcause_model="  ")
     assert blank.rootcause_model is None
+
+
+def test_slack_approvers_and_psi_floor_have_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear(monkeypatch)
+    monkeypatch.delenv("MERIDIAN_SLACK_APPROVERS", raising=False)
+    monkeypatch.delenv("MERIDIAN_APPROVAL_TIMEOUT_S", raising=False)
+    monkeypatch.delenv("MERIDIAN_PSI_MIN_ROWS", raising=False)
+    settings = Settings(_env_file=None)
+    assert settings.approver_ids() == frozenset()
+    assert settings.approval_timeout_s == 86400
+    assert settings.psi_min_rows == 200
+    listed = Settings(_env_file=None, slack_approvers="U1, U2")
+    assert listed.approver_ids() == frozenset({"U1", "U2"})

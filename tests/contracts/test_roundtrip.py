@@ -75,6 +75,7 @@ def test_each_model_round_trips_through_json() -> None:
                     patch=patch,
                     fix_attempts=1,
                     critic_rounds=2,
+                    needs_human=True,
                 )
             },
         ),
@@ -177,6 +178,7 @@ def test_round_trip_covers_every_contract_model() -> None:
             verdicts=[make_verdict(patch_id=patch.id)],
             fix_attempts=1,
             critic_rounds=1,
+            needs_human=True,
         ),
         "MeridianState": MeridianState(
             run_id=UUID("33333333-3333-4333-8333-333333333333"),

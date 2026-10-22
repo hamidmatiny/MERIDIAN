@@ -45,6 +45,7 @@ def test_syntax_failure_returns_to_fix_without_a_critic_round() -> None:
         hypothesis=hypothesis,
         patch=patch,
         fix_attempts=1,
+        needs_human=True,
     )
     update = run_pre_critic(
         MeridianState(run_id=uuid4(), cases={str(incident.id): case}),
@@ -74,6 +75,7 @@ def test_import_outside_the_gate_is_not_a_critic_round() -> None:
         hypothesis=hypothesis,
         patch=patch,
         fix_attempts=1,
+        needs_human=True,
     )
     update = run_pre_critic(
         MeridianState(run_id=uuid4(), cases={str(incident.id): case}),
@@ -104,6 +106,7 @@ def test_escalate_and_rerun_leave_dry_run_unset() -> None:
             hypothesis=hypothesis,
             patch=patch,
             fix_attempts=1,
+            needs_human=kind is RemediationKind.ESCALATE,
         )
         update = run_pre_critic(
             MeridianState(run_id=uuid4(), cases={str(incident.id): case}),
@@ -132,6 +135,7 @@ def test_over_broad_objection_requires_the_flag() -> None:
         incident=incident,
         hypothesis=hypothesis,
         patch=patch,
+        needs_human=True,
         dry_run=DryRunReport(
             rows_sampled=3,
             rows_changed=1,
@@ -174,7 +178,12 @@ def test_two_degraded_reviews_need_a_human() -> None:
     incident = make_incident()
     hypothesis = make_hypothesis(incident_id=incident.id)
     patch = make_patch(incident_id=incident.id, hypothesis_id=hypothesis.id)
-    case = IncidentCase(incident=incident, hypothesis=hypothesis, patch=patch)
+    case = IncidentCase(
+        incident=incident,
+        hypothesis=hypothesis,
+        patch=patch,
+        needs_human=True,
+    )
     for round_number in (1, 2):
         case = record_verdict(
             case,
@@ -201,7 +210,13 @@ def test_a_regression_syntax_error_skips_the_gate() -> None:
             "regression_test": "def check(\n",
         }
     )
-    case = IncidentCase(incident=incident, hypothesis=hypothesis, patch=patch, fix_attempts=1)
+    case = IncidentCase(
+        incident=incident,
+        hypothesis=hypothesis,
+        patch=patch,
+        fix_attempts=1,
+        needs_human=True,
+    )
     update = run_pre_critic(
         MeridianState(run_id=uuid4(), cases={str(incident.id): case}),
         num_cpus=1,

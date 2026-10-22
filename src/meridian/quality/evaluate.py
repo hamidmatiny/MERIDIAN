@@ -29,11 +29,14 @@ def evaluate(
     reference_profile: ReferenceProfile,
     *,
     detected_at: datetime | None = None,
+    psi_min_rows: int | None = None,
 ) -> list[Incident]:
     """Run the dataset contract, PSI, and the freshness SLA.
 
     Severity stays unset. Blast radius comes from lineage. Sample rows are
     capped at 50. Each pandera failure maps through the explicit check table.
+    When ``psi_min_rows`` is set and the frame is smaller, PSI is omitted.
+    The caller records that skip. Omitting it here is not a PSI pass.
     """
     if metadata.dataset != dataset_name:
         raise ValueError("metadata.dataset must match dataset_name")
@@ -42,7 +45,8 @@ def evaluate(
     moment = datetime.now(UTC) if detected_at is None else detected_at
     grouped: dict[FaultType, _Bucket] = {}
     _collect_schema_errors(df, dataset_name, grouped)
-    _collect_psi(df, reference_profile, grouped)
+    if psi_min_rows is None or len(df) >= psi_min_rows:
+        _collect_psi(df, reference_profile, grouped)
     if is_late(metadata, DEFAULT_FRESHNESS_SLA):
         _add(
             grouped,

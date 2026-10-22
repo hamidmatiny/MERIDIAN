@@ -439,7 +439,12 @@ def test_critic_submit_records_a_verdict() -> None:
     incident = make_incident()
     hypothesis = make_hypothesis(incident_id=incident.id)
     patch = make_patch(incident_id=incident.id, hypothesis_id=hypothesis.id)
-    case = IncidentCase(incident=incident, hypothesis=hypothesis, patch=patch)
+    case = IncidentCase(
+        incident=incident,
+        hypothesis=hypothesis,
+        patch=patch,
+        needs_human=True,
+    )
     state = MeridianState(run_id=uuid4(), cases={str(incident.id): case})
     updated = run_critic(
         state,
@@ -710,6 +715,7 @@ def test_retry_feedback_includes_the_previous_dry_run() -> None:
         incident=incident,
         hypothesis=hypothesis,
         patch=make_patch(incident_id=incident.id, hypothesis_id=hypothesis.id),
+        needs_human=True,
         dry_run=DryRunReport(
             rows_sampled=10,
             rows_changed=4,

@@ -19,6 +19,7 @@ from meridian.contracts.hypothesis import Hypothesis
 from meridian.contracts.incident import Incident
 from meridian.contracts.patch import Patch
 from meridian.contracts.postmortem import Postmortem
+from meridian.contracts.remediation import RemediationKind
 from meridian.contracts.severity import Severity
 from meridian.contracts.triage import TriageResult
 from meridian.contracts.verdict import Verdict
@@ -211,6 +212,12 @@ class IncidentCase(MeridianModel):
                 self.incident.id,
                 "postmortem.incident_id must equal incident.id",
             )
+        if (
+            self.patch is not None
+            and self.patch.remediation_kind is RemediationKind.ESCALATE
+            and not self.needs_human
+        ):
+            raise ValueError("ESCALATE requires needs_human")
         return self
 
 

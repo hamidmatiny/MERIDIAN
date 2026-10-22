@@ -1,6 +1,7 @@
-"""The import surface stays off Slack and the critic provider.
+"""The import surface stays off the critic provider.
 
-MCP and the MCP adapter are imported only by the tool servers.
+Slack is imported only by the Slack package and ``slack_app``. MCP and the
+MCP adapter are imported only by the tool servers.
 """
 
 import ast
@@ -39,9 +40,15 @@ def test_sources_do_not_import_agent_runtimes() -> None:
     offenders: list[str] = []
     for path in paths:
         banned = _imported_modules(path) & BANNED
+        if _slack_module(path):
+            banned -= {"slack_bolt", "slack_sdk"}
         if banned:
             offenders.append(f"{path.relative_to(ROOT.parent.parent)}: {sorted(banned)}")
     assert offenders == []
+
+
+def _slack_module(path: Path) -> bool:
+    return "slack" in path.parts or path.name == "slack_app.py"
 
 
 def test_mcp_imports_stay_in_the_servers() -> None:

@@ -49,7 +49,15 @@ def _case(clean, fault, kind: RemediationKind, source: str) -> tuple[IncidentCas
         files_touched=[path],
         author_model="test",
     )
-    return IncidentCase(incident=incident, hypothesis=hypothesis, patch=patch), label
+    return (
+        IncidentCase(
+            incident=incident,
+            hypothesis=hypothesis,
+            patch=patch,
+            needs_human=kind is RemediationKind.ESCALATE,
+        ),
+        label,
+    )
 
 
 def test_escalate_and_rerun_do_not_claim_a_row_match() -> None:

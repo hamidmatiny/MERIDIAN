@@ -51,6 +51,7 @@ def test_fix_and_critic_reject_the_wrong_branch_shape() -> None:
         incident=incident,
         hypothesis=hypothesis,
         patch=make_patch(incident_id=incident.id, hypothesis_id=hypothesis.id),
+        needs_human=True,
     )
     with pytest.raises(ValueError, match="one incident"):
         run_critic(
@@ -140,7 +141,12 @@ def test_critic_accepts_a_dict_draft_and_drops_a_blank_objection() -> None:
     incident = make_incident()
     hypothesis = make_hypothesis(incident_id=incident.id)
     patch = make_patch(incident_id=incident.id, hypothesis_id=hypothesis.id)
-    case = IncidentCase(incident=incident, hypothesis=hypothesis, patch=patch)
+    case = IncidentCase(
+        incident=incident,
+        hypothesis=hypothesis,
+        patch=patch,
+        needs_human=True,
+    )
 
     class _Chat:
         def with_structured_output(self, schema: object, **_kwargs: object) -> "_Chat":
@@ -186,7 +192,13 @@ def test_route_helpers_stop_finished_cases() -> None:
     assert route_after_critic(case) == "end"
     hypothesis = make_hypothesis(incident_id=incident.id)
     patch = make_patch(incident_id=incident.id, hypothesis_id=hypothesis.id)
-    reviewed = IncidentCase(incident=incident, hypothesis=hypothesis, patch=patch, fix_attempts=1)
+    reviewed = IncidentCase(
+        incident=incident,
+        hypothesis=hypothesis,
+        patch=patch,
+        fix_attempts=1,
+        needs_human=True,
+    )
     from meridian.contracts.verdict import Verdict
 
     with pytest.raises(ValueError, match="next critic round"):
@@ -203,7 +215,12 @@ def test_verifier_rejects_a_bad_branch_and_a_missing_file(tmp_path) -> None:
     other = make_incident()
     hypothesis = make_hypothesis(incident_id=incident.id)
     patch = make_patch(incident_id=incident.id, hypothesis_id=hypothesis.id)
-    case = IncidentCase(incident=incident, hypothesis=hypothesis, patch=patch)
+    case = IncidentCase(
+        incident=incident,
+        hypothesis=hypothesis,
+        patch=patch,
+        needs_human=True,
+    )
     with pytest.raises(ValueError, match="one incident"):
         run_verifier(
             _state(case, IncidentCase(incident=other)),

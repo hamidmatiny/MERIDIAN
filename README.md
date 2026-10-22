@@ -2,11 +2,11 @@
 
 MERIDIAN is being built to detect data-quality failures, explain them, propose a fix, verify that fix against the failing data, and ask a human in Slack before anything merges. The path is a fixed LangGraph state machine. The goal is to shorten the time from incident to a verified, approved fix.
 
-This repository has the Phase 0 contracts, the Phase 1 data contracts and injector, the Phase 2 Sentinel → Triage graph, and the Phase 3 root-cause agent. Phase 4 is the Fix → Critic → Verifier loop. Slack and the postmortem are not built. Unit tests do not call a model or Slack.
+This repository has Phases 0 through 4: contracts, the injector, Sentinel → Triage, root cause, and the Fix → Critic → Verifier loop. Phase 5 (Slack approval and the postmortem) is in progress. Unit tests do not call a model or Slack.
 
 ## Target agent graph
 
-Sentinel through the verifier are implemented. Slack approval and the postmortem are planned. A passing verifier ends the branch.
+Sentinel through the verifier are implemented. A verified patch waits on Slack. An escalation posts an acknowledge-only message. Every finished case gets a postmortem. Nothing is applied until an allowed person clicks Approve.
 
 ```mermaid
 flowchart TD
@@ -16,23 +16,23 @@ flowchart TD
   fix[Fix]
   critic[Critic]
   verifier[Verifier]
-  human[needs_human]
   slack[SlackApproval]
+  applyNode[Apply]
   postmortem[Postmortem]
 
   sentinel --> triage --> rootCause --> fix --> critic
   critic -->|"approved"| verifier
   critic -->|"rejected, critic_rounds under 3"| fix
-  critic -->|"rejected on round 3"| human
-  verifier -->|"passed"| done[END]
+  critic -->|"rejected on round 3, or ESCALATE"| slack
+  verifier -->|"passed"| slack
   verifier -->|"failed, fix_attempts under 3"| fix
-  verifier -->|"failed on attempt 3, or escalated"| human
-  done -.-> slack --> postmortem
+  verifier -->|"failed on attempt 3, or escalated"| slack
+  slack -->|"APPROVED"| applyNode --> postmortem
+  slack -->|"REJECTED, TIMEOUT, or ACKNOWLEDGED"| postmortem
 
   classDef built fill:#d9ead3,stroke:#38761d
   classDef planned fill:#f3f3f3,stroke:#999
-  class sentinel,triage,rootCause,fix,critic,verifier,human built
-  class slack,postmortem planned
+  class sentinel,triage,rootCause,fix,critic,verifier,slack,applyNode,postmortem built
 ```
 
 | Node | Planned role |
@@ -73,8 +73,8 @@ Loop limits, enforced on each `IncidentCase`: a critic rejection under round 3 r
 | 1 | Pandera contracts and an incident injector | done |
 | 2 | Graph skeleton: Sentinel to Triage | done |
 | 3 | RootCause agent with MCP tools | done |
-| 4 | Fix, Critic, and Verifier loop on Ray | in progress |
-| 5 | Slack approval gate and Postmortem | planned |
+| 4 | Fix, Critic, and Verifier loop on Ray | done |
+| 5 | Slack approval gate and Postmortem | in progress |
 | 6 | MERIDIAN-Bench harness and published results | planned |
 | 7 | OpenTelemetry, cost tracking, Docker Compose demo | planned |
 
@@ -93,7 +93,9 @@ Loop limits, enforced on each `IncidentCase`: a critic rejection under round 3 r
 - `src/meridian/injector/` — one injector per fault type, the seeded `events.jsonl` log, and the `python -m meridian.injector` CLI.
 - `src/meridian/config.py` — settings loaded from the environment and `.env`. Missing keys do not crash import. `Settings.require_anthropic()`, `Settings.require_xai()`, and `Settings.require_slack()` raise when a caller actually needs those credentials. `--live` asks for Anthropic, then the four model names, then xAI.
 - `schemas/` — JSON Schema generated from the contracts.
-- `docs/adr/` — ADR-001 through ADR-026.
+- `src/meridian/slack/` — Block Kit, the approval interrupt, apply-to-directory, and the postmortem.
+- `src/meridian/slack_app.py` — `python -m meridian.slack_app`. Socket Mode and the graph worker.
+- `docs/adr/` — ADR-001 through ADR-030.
 - `.github/workflows/ci.yml` — the checks below.
 
 Generated Parquet under `data/` is gitignored.
@@ -125,6 +127,20 @@ uv run python -m meridian.run --dataset fleet_daily_kpi --fault NULL_EXPLOSION -
 ```
 
 Copy `.env.example` to `.env` only when a later phase needs credentials. Phase 0 tests do not call external services.
+
+## Slack setup
+
+Create a Slack app on the workspace and invite the bot to the approval channel.
+
+Scopes for the bot token: `chat:write`, `channels:read`, `users:read`, `files:write`, `app_mentions:read`.
+
+Event Subscriptions: turn them on, subscribe the bot to `app_mention`, and reinstall the app after that change. Socket Mode must be on (`SLACK_APP_TOKEN` is an `xapp-` token). Interactivity must be on so the Approve, Reject, and Acknowledge buttons work.
+
+`MERIDIAN_SLACK_APPROVERS` is a comma-separated list of Slack user ids. Anyone else gets an ephemeral "not authorized" and the case does not change. `MERIDIAN_APPROVAL_TIMEOUT_S` defaults to 86400. A timeout marks the case `needs_human` and does not apply the patch.
+
+Mention the bot by its user id, not by display name: `@bot status` lists open cases, `@bot help` lists the commands.
+
+`python -m meridian.slack_app` runs the socket and the worker. `python -m meridian.run --slack` posts the request and returns. The click resumes the checkpoint.
 
 ## License
 

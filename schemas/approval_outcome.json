@@ -3,7 +3,8 @@
   "enum": [
     "APPROVED",
     "REJECTED",
-    "TIMEOUT"
+    "TIMEOUT",
+    "ACKNOWLEDGED"
   ],
   "title": "ApprovalOutcome",
   "type": "string"

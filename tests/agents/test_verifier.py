@@ -189,6 +189,64 @@ def test_the_live_over_broad_trace_fails_outside_rows(tmp_path: Path) -> None:
     assert checked.verification.passed is False
 
 
+def test_small_quarantine_skips_psi_instead_of_a_false_shift(tmp_path: Path) -> None:
+    """80-row NULL_EXPLOSION leaves a PSI shift on 72 rows. Below 200 rows it is a skip."""
+    ref = write_partition(
+        tmp_path,
+        dataset="fleet_daily_kpi",
+        fault=FaultType.NULL_EXPLOSION,
+        intensity=0.1,
+        seed=42,
+        rows=80,
+        name="small",
+    )
+    frame = read_parquet(Path(ref.parquet_path)).dropna(subset=["total_distance_km"])
+    profile = ReferenceProfile.model_validate_json(
+        Path(ref.reference_profile_path).read_text(encoding="utf-8")
+    )
+    raw = evaluate(ref.dataset, frame.reset_index(drop=True), ref.metadata, profile)
+    assert any(
+        item.fault_type is FaultType.DISTRIBUTION_SHIFT
+        and "psi_total_distance_km" in item.failing_checks
+        for item in raw
+    )
+    skipped = evaluate(
+        ref.dataset,
+        frame.reset_index(drop=True),
+        ref.metadata,
+        profile,
+        psi_min_rows=200,
+    )
+    assert not any(item.fault_type is FaultType.DISTRIBUTION_SHIFT for item in skipped)
+    source = "def quarantine(df):\n    return df['total_distance_km'].isna()\n"
+    state = _state(tmp_path, FaultType.NULL_EXPLOSION, RemediationKind.QUARANTINE, source)
+    # _state writes its own 400-row partition. Replay the 80-row ref instead.
+    incident = next(iter(state.cases.values())).incident
+    hypothesis = next(iter(state.cases.values())).hypothesis
+    assert hypothesis is not None
+    case = IncidentCase(
+        incident=incident,
+        hypothesis=hypothesis,
+        patch=_patch(incident.id, hypothesis.id, RemediationKind.QUARANTINE, source),
+    )
+    small = MeridianState(run_id=uuid4(), partitions=[ref], cases={str(incident.id): case})
+    updated = run_verifier(
+        small,
+        num_cpus=1,
+        timeout_s=20,
+        memory_mb=256,
+        max_row_loss=0.01,
+        max_quarantine=0.25,
+    )
+    checked = next(iter(updated["cases"].values()))
+    assert checked.verification is not None
+    psi = next(item for item in checked.verification.checks if item.name == "psi")
+    assert psi.detail == "skipped_insufficient_rows"
+    assert psi.passed is True
+    contracts = next(item for item in checked.verification.checks if item.name == "contracts")
+    assert contracts.passed is True
+
+
 def test_verifier_does_not_read_the_injected_fault() -> None:
     from meridian.agents import verifier
 

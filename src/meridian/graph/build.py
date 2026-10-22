@@ -21,11 +21,13 @@ from meridian.agents.sentinel import run_sentinel
 from meridian.agents.triage import StructuredChat, run_triage
 from meridian.agents.verifier import run_verifier
 from meridian.contracts.incident_case import MAX_CRITIC_ROUNDS, MAX_FIX_ATTEMPTS, IncidentCase
+from meridian.contracts.remediation import RemediationKind
 from meridian.contracts.severity import SEVERITY_RANK
 from meridian.contracts.state import MeridianState
 from meridian.graph.limits import route_after_root
 from meridian.llm.errors import AbortGate, RunAborted, unwrap_abort
 from meridian.prompts import TRIAGE_PROMPT_VERSION
+from meridian.slack.gate import ApprovalPorts, run_approval, run_postmortem
 
 logger = logging.getLogger("meridian.graph")
 
@@ -121,8 +123,17 @@ def build_graph(
     wall_budget_s: float = 900,
     detected_at: datetime | None = None,
     interrupt_after: list[str] | None = None,
+    psi_min_rows: int = 200,
+    approval: bool = False,
+    approval_ports: ApprovalPorts | None = None,
 ) -> CompiledStateGraph[MeridianState, None, MeridianState, MeridianState]:
-    """Compile Sentinel → Triage → RootCause → Fix → Critic → Verifier."""
+    """Compile Sentinel → Triage → RootCause → Fix → Critic → Verifier.
+
+    ``approval=True`` continues a finished branch into the Slack gate and a
+    postmortem. The gate interrupts; it does not block the process.
+    """
+    if approval and approval_ports is None:
+        raise ValueError("approval requires approval_ports")
     moment = datetime.now(UTC) if detected_at is None else detected_at
     fix_model = HeuristicFixModel()
     critic_model = HeuristicCriticModel()
@@ -212,6 +223,7 @@ def build_graph(
             timeout_s=sandbox_timeout_s,
             memory_mb=sandbox_memory_mb,
             sample_seed=sample_seed,
+            psi_min_rows=psi_min_rows,
         )
 
     def critic(state: MeridianState) -> dict[str, object]:
@@ -239,6 +251,7 @@ def build_graph(
             max_row_loss=max_row_loss,
             max_quarantine=max_quarantine,
             max_outside_change=max_outside_change,
+            psi_min_rows=psi_min_rows,
         )
 
     graph: StateGraph[MeridianState, None, MeridianState, MeridianState] = StateGraph(MeridianState)
@@ -255,20 +268,51 @@ def build_graph(
     graph.add_node("route_pre", _wait, defer=True)
     graph.add_node("route_critic", _wait, defer=True)
     graph.add_node("route_verifier", _wait, defer=True)
+    if approval:
+        assert approval_ports is not None
+        ports = approval_ports
+
+        def slack_approval(state: MeridianState) -> dict[str, object]:
+            return run_approval(_as_state(state), ports)
+
+        def postmortem(state: MeridianState) -> dict[str, object]:
+            return run_postmortem(_as_state(state), ports)
+
+        graph.add_node("slack_approval", slack_approval)
+        graph.add_node("postmortem", postmortem)
+        graph.add_edge("slack_approval", "postmortem")
+        graph.add_edge("postmortem", END)
+    tail: list[str] = ["slack_approval", END] if approval else [END]
     graph.add_edge(START, "sentinel")
     graph.add_conditional_edges("sentinel", _fan_out, ["triage", END])
     graph.add_edge("triage", "dispatch")
-    graph.add_conditional_edges("dispatch", _to_root, ["root_cause", END])
+    graph.add_conditional_edges("dispatch", _with_slack(_to_root, approval), ["root_cause", *tail])
     graph.add_edge("root_cause", "route_root")
-    graph.add_conditional_edges("route_root", _after_root, ["fix", END])
+    graph.add_conditional_edges("route_root", _with_slack(_after_root, approval), ["fix", *tail])
     graph.add_edge("fix", "route_fix")
-    graph.add_conditional_edges("route_fix", _to_pre_critic, ["pre_critic", END])
+    graph.add_conditional_edges(
+        "route_fix",
+        _with_slack(_to_pre_critic, approval),
+        ["pre_critic", *tail],
+    )
     graph.add_edge("pre_critic", "route_pre")
-    graph.add_conditional_edges("route_pre", _after_pre_critic, ["fix", "critic", END])
+    graph.add_conditional_edges(
+        "route_pre",
+        _with_slack(_after_pre_critic, approval),
+        ["fix", "critic", *tail],
+    )
     graph.add_edge("critic", "route_critic")
-    graph.add_conditional_edges("route_critic", _after_critic, ["fix", "critic", "verifier", END])
+    graph.add_conditional_edges(
+        "route_critic",
+        _with_slack(_after_critic, approval),
+        ["fix", "critic", "verifier", *tail],
+    )
     graph.add_edge("verifier", "route_verifier")
-    graph.add_conditional_edges("route_verifier", _after_verifier, ["fix", END])
+    graph.add_conditional_edges(
+        "route_verifier",
+        _with_slack(_after_verifier, approval),
+        ["fix", *tail],
+    )
     return graph.compile(
         checkpointer=checkpointer,
         interrupt_after=interrupt_after,
@@ -338,6 +382,33 @@ def _after_root(state: MeridianState) -> list[Send] | str:
     return [Send("fix", _branch(state, key, case)) for key, case in pending]
 
 
+def _escalate_open(case: IncidentCase) -> bool:
+    """An ESCALATE patch still walks to the critic until the verifier records it."""
+    return (
+        case.patch is not None
+        and case.patch.remediation_kind is RemediationKind.ESCALATE
+        and case.verification is None
+    )
+
+
+def _with_slack(
+    router: Callable[[MeridianState], list[Send] | str],
+    enabled: bool,
+) -> Callable[[MeridianState], list[Send] | str]:
+    """Turn a finished branch into the Slack gate when approval is on."""
+
+    def inner(state: MeridianState) -> list[Send] | str:
+        result = router(state)
+        if result != END or not enabled:
+            return result
+        pending = [(key, case) for key, case in state.cases.items() if case.postmortem is None]
+        if not pending:
+            return END
+        return [Send("slack_approval", _branch(state, key, case)) for key, case in pending]
+
+    return inner
+
+
 def _to_pre_critic(state: MeridianState) -> list[Send] | str:
     """Send a patch to the deterministic checks before any critic call."""
     if state.aborted:
@@ -346,8 +417,8 @@ def _to_pre_critic(state: MeridianState) -> list[Send] | str:
         (key, case)
         for key, case in state.cases.items()
         if case.patch is not None
-        and not case.needs_human
         and case.pre_critic_attempt < case.fix_attempts
+        and (not case.needs_human or _escalate_open(case))
     ]
     if not pending:
         return END
@@ -360,9 +431,15 @@ def _after_pre_critic(state: MeridianState) -> list[Send] | str:
         return END
     sends: list[Send] = []
     for key, case in state.cases.items():
-        if case.needs_human or case.patch is None:
+        if case.patch is None:
             continue
-        if case.pre_critic_blocked and case.fix_attempts < MAX_FIX_ATTEMPTS:
+        if case.needs_human and not _escalate_open(case):
+            continue
+        if (
+            case.pre_critic_blocked
+            and not case.needs_human
+            and case.fix_attempts < MAX_FIX_ATTEMPTS
+        ):
             sends.append(Send("fix", _branch(state, key, case)))
         elif (
             not case.pre_critic_blocked
@@ -379,17 +456,20 @@ def _after_critic(state: MeridianState) -> list[Send] | str:
         return END
     sends: list[Send] = []
     for key, case in state.cases.items():
-        if case.needs_human or not case.verdicts or case.patch is None:
+        if case.patch is None or not case.verdicts:
+            continue
+        if case.needs_human and not _escalate_open(case):
             continue
         latest = case.verdicts[-1]
         degraded = sum(1 for item in case.verdicts if item.critic_degraded)
-        if latest.critic_degraded and degraded < 2:
+        if latest.critic_degraded and degraded < 2 and not case.needs_human:
             sends.append(Send("critic", _branch(state, key, case)))
         elif latest.approved and case.verification is None:
             sends.append(Send("verifier", _branch(state, key, case)))
         elif (
             not latest.approved
             and not latest.critic_degraded
+            and not case.needs_human
             and case.fix_attempts == case.critic_rounds
             and case.critic_rounds < MAX_CRITIC_ROUNDS
         ):

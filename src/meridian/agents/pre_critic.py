@@ -37,6 +37,7 @@ def run_pre_critic(
     timeout_s: float,
     memory_mb: int,
     sample_seed: int = 42,
+    psi_min_rows: int = 200,
 ) -> dict[str, object]:
     """Gate the patch, then either bounce to Fix or attach a dry-run report."""
     if len(state.cases) != 1:
@@ -56,7 +57,18 @@ def run_pre_critic(
             }
         )
         return {"cases": {key: updated}}
-    if case.patch.remediation_kind in (RemediationKind.ESCALATE, RemediationKind.RERUN_UPSTREAM):
+    if case.patch.remediation_kind is RemediationKind.ESCALATE:
+        skipped = case.model_copy(
+            update={
+                "pre_critic_attempt": case.fix_attempts,
+                "pre_critic_blocked": False,
+                "pre_critic_note": "",
+                "dry_run": None,
+                "needs_human": True,
+            }
+        )
+        return {"cases": {key: skipped}}
+    if case.patch.remediation_kind is RemediationKind.RERUN_UPSTREAM:
         skipped = case.model_copy(
             update={
                 "pre_critic_attempt": case.fix_attempts,
@@ -73,6 +85,7 @@ def run_pre_critic(
         timeout_s=timeout_s,
         memory_mb=memory_mb,
         sample_seed=sample_seed,
+        psi_min_rows=psi_min_rows,
     )
     if report.no_op:
         updated = case.model_copy(
@@ -138,6 +151,7 @@ def _dry_run(
     timeout_s: float,
     memory_mb: int,
     sample_seed: int,
+    psi_min_rows: int,
 ) -> DryRunReport:
     _key, case = next(iter(state.cases.items()))
     assert case.patch is not None
@@ -179,6 +193,7 @@ def _dry_run(
         profile,
         quarantine=kind is RemediationKind.QUARANTINE,
         detail="",
+        psi_min_rows=psi_min_rows,
     )
 
 
@@ -222,6 +237,7 @@ def _measured(
     *,
     quarantine: bool,
     detail: str,
+    psi_min_rows: int = 200,
 ) -> DryRunReport:
     from meridian.contracts.fault_type import FaultType
     from meridian.contracts.partition_metadata import PartitionMetadata
@@ -241,7 +257,7 @@ def _measured(
     else:
         fixed = set(range(max(0, len(failing) - len(after_failing))))
         still = set(range(len(after_failing)))
-    contracts = _contracts(dataset, after, metadata, profile)
+    contracts = _contracts(dataset, after, metadata, profile, psi_min_rows=psi_min_rows)
     return DryRunReport(
         rows_sampled=len(before),
         clean_rows=max(len(before) - len(failing), 0),
@@ -252,7 +268,7 @@ def _measured(
         rows_fixed=len(fixed),
         rows_still_failing=len(still),
         no_op=bool(failing) and len(fixed) == 0,
-        psi_after=_psi(after, profile),
+        psi_after=_psi(after, profile, min_rows=psi_min_rows),
         detail=detail,
     )
 
@@ -312,18 +328,30 @@ def _contracts(
     frame: pd.DataFrame,
     metadata: object,
     profile: ReferenceProfile,
+    *,
+    psi_min_rows: int = 200,
 ) -> int:
     from meridian.contracts.partition_metadata import PartitionMetadata
 
     if not isinstance(metadata, PartitionMetadata):
         return 0
     try:
-        return len(evaluate(dataset, frame.reset_index(drop=True), metadata, profile))
+        return len(
+            evaluate(
+                dataset,
+                frame.reset_index(drop=True),
+                metadata,
+                profile,
+                psi_min_rows=psi_min_rows,
+            )
+        )
     except (ValueError, ValidationError):
         return 0
 
 
-def _psi(frame: pd.DataFrame, profile: ReferenceProfile) -> str:
+def _psi(frame: pd.DataFrame, profile: ReferenceProfile, *, min_rows: int = 0) -> str:
+    if len(frame) < min_rows:
+        return "skipped_insufficient_rows"
     over: list[str] = []
     for column in profile.columns:
         if column.column not in frame.columns:

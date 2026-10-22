@@ -22,7 +22,7 @@ from meridian.contracts import (
 )
 from meridian.contracts.approval import ApprovalDecision, ApprovalOutcome
 from meridian.contracts.incident_case import IncidentCase
-from meridian.contracts.remediation import Objection, ObjectionKind
+from meridian.contracts.remediation import Objection, ObjectionKind, RemediationKind
 
 _WORDS = st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=1, max_size=12)
 _UTC = st.datetimes(
@@ -91,10 +91,12 @@ def consistent_states(draw: st.DrawFn) -> MeridianState:
         )
     patch: Patch | None = None
     if draw(st.booleans()):
+        kind = draw(st.sampled_from(list(RemediationKind)))
         patch = Patch(
             id=draw(st.uuids()),
             incident_id=incident.id,
             hypothesis_id=hypothesis.id if hypothesis is not None else draw(st.uuids()),
+            remediation_kind=kind,
             diff=_DIFF,
             regression_test=draw(_WORDS),
             files_touched=[f"{draw(_WORDS)}.py"],
@@ -144,6 +146,9 @@ def consistent_states(draw: st.DrawFn) -> MeridianState:
             time_to_resolution_s=draw(st.integers(min_value=0, max_value=10_000)),
             cost_usd=draw(_MONEY),
         )
+    needs_human = draw(st.booleans())
+    if patch is not None and patch.remediation_kind is RemediationKind.ESCALATE:
+        needs_human = True
     case = IncidentCase(
         incident=incident,
         hypothesis=hypothesis,
@@ -154,6 +159,7 @@ def consistent_states(draw: st.DrawFn) -> MeridianState:
         postmortem=postmortem,
         fix_attempts=draw(st.integers(min_value=0, max_value=3)),
         critic_rounds=draw(st.integers(min_value=0, max_value=3)),
+        needs_human=needs_human,
     )
     return MeridianState(run_id=run_id, cases={str(incident.id): case})
 

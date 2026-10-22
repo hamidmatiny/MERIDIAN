@@ -38,6 +38,7 @@ def run_verifier(
     max_row_loss: float,
     max_quarantine: float,
     max_outside_change: float = 0.0,
+    psi_min_rows: int = 200,
 ) -> dict[str, object]:
     """Replay the current patch. Escalation and a failure at the cap need a human."""
     if len(state.cases) != 1:
@@ -86,6 +87,7 @@ def run_verifier(
             memory_mb=memory_mb,
             num_cpus=num_cpus,
             max_quarantine=max_quarantine,
+            psi_min_rows=psi_min_rows,
             started=started,
         )
     else:
@@ -98,6 +100,7 @@ def run_verifier(
             max_row_loss=max_row_loss,
             dry_run=case.dry_run,
             max_outside_change=max_outside_change,
+            psi_min_rows=psi_min_rows,
             started=started,
         )
     updated = record_verification(case, result, escalate=False)
@@ -114,6 +117,7 @@ def _repair(
     max_row_loss: float,
     dry_run: DryRunReport | None,
     max_outside_change: float,
+    psi_min_rows: int,
     started: float,
 ) -> VerificationResult:
     loaded = _load(ref)
@@ -146,12 +150,12 @@ def _repair(
             started,
         )
     repaired = ran.frame
-    contracts, remaining = _contracts(ref, repaired, profile)
+    contracts, remaining = _contracts(ref, repaired, profile, psi_min_rows=psi_min_rows)
     checks = [
         contracts,
         _regression(patch.regression_test, repaired, timeout_s, memory_mb, num_cpus),
         _row_loss(len(frame), len(repaired), max_row_loss),
-        _psi(repaired, profile),
+        _psi(repaired, profile, min_rows=psi_min_rows),
         _outside_rows(dry_run, max_outside_change),
     ]
     return _result(patch.id, patch.remediation_kind, checks, remaining, len(repaired), started)
@@ -165,6 +169,7 @@ def _quarantine(
     memory_mb: int,
     num_cpus: int,
     max_quarantine: float,
+    psi_min_rows: int,
     started: float,
 ) -> VerificationResult:
     loaded = _load(ref)
@@ -203,12 +208,14 @@ def _quarantine(
         passed=dropped <= max_quarantine,
         detail=f"quarantined {dropped:.3f}; cap {max_quarantine:.3f}",
     )
-    contracts, remaining = _contracts(ref, kept, profile)
+    contracts, remaining = _contracts(ref, kept, profile, psi_min_rows=psi_min_rows)
     checks = [
         contracts,
         _regression(patch.regression_test, kept, timeout_s, memory_mb, num_cpus),
         fraction,
     ]
+    if len(kept) < psi_min_rows:
+        checks.append(_psi_skip())
     return _result(patch.id, patch.remediation_kind, checks, remaining, len(kept), started)
 
 
@@ -259,8 +266,16 @@ def _contracts(
     ref: PartitionRef,
     frame: pd.DataFrame,
     profile: ReferenceProfile,
+    *,
+    psi_min_rows: int,
 ) -> tuple[VerificationCheck, int]:
-    incidents = evaluate(ref.dataset, frame, ref.metadata, profile)
+    incidents = evaluate(
+        ref.dataset,
+        frame,
+        ref.metadata,
+        profile,
+        psi_min_rows=psi_min_rows,
+    )
     return (
         VerificationCheck(
             name="contracts",
@@ -323,7 +338,17 @@ def _outside_rows(dry_run: DryRunReport | None, cap: float) -> VerificationCheck
     )
 
 
-def _psi(frame: pd.DataFrame, profile: ReferenceProfile) -> VerificationCheck:
+def _psi_skip() -> VerificationCheck:
+    """A recorded skip. ``passed`` is true only so the other checks can still pass.
+
+    The detail is ``skipped_insufficient_rows``, never ``under threshold``.
+    """
+    return VerificationCheck(name="psi", passed=True, detail="skipped_insufficient_rows")
+
+
+def _psi(frame: pd.DataFrame, profile: ReferenceProfile, *, min_rows: int) -> VerificationCheck:
+    if len(frame) < min_rows:
+        return _psi_skip()
     over: list[str] = []
     for column in profile.columns:
         if column.column not in frame.columns:

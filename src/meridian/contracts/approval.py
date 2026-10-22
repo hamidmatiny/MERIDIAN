@@ -1,4 +1,4 @@
-"""Human approval of a patch. TIMEOUT is not an approval."""
+"""Human approval of a patch. TIMEOUT and ACKNOWLEDGED are not approvals."""
 
 from enum import StrEnum
 from uuid import UUID
@@ -15,13 +15,16 @@ class ApprovalOutcome(StrEnum):
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
     TIMEOUT = "TIMEOUT"
+    ACKNOWLEDGED = "ACKNOWLEDGED"
 
 
 class ApprovalDecision(MeridianModel):
     """The human decision on whether a verified patch may merge."""
 
     patch_id: UUID = Field(description="Patch the human decided on.")
-    decision: ApprovalOutcome = Field(description="APPROVED, REJECTED, or TIMEOUT.")
+    decision: ApprovalOutcome = Field(
+        description="APPROVED, REJECTED, TIMEOUT, or ACKNOWLEDGED. Only APPROVED may be applied.",
+    )
     approver: NonBlank = Field(description="Identity that decided, such as a Slack user id.")
     decided_at: UtcDatetime = Field(description="UTC time of the decision.")
     comment: str = Field(description="Human comment. Empty when none was given.")

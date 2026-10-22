@@ -1,6 +1,7 @@
 """Run Sentinel → Triage → RootCause → Fix → Critic → Verifier on one partition."""
 
 import argparse
+import json
 import math
 import sys
 import tempfile
@@ -60,6 +61,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Call the configured models. Defaults to the free tier.",
     )
+    parser.add_argument(
+        "--slack",
+        action="store_true",
+        help="Stop at the Slack approval gate instead of ending after the verifier.",
+    )
     args = parser.parse_args(argv)
     if args.intensity < 0 or args.intensity > 1:
         parser.error("intensity must be in the interval [0, 1]")
@@ -71,6 +77,15 @@ def main(argv: list[str] | None = None) -> int:
     except MeridianConfigError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    if args.slack:
+        try:
+            settings.require_slack()
+        except MeridianConfigError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        if not settings.approver_ids():
+            print("MERIDIAN_SLACK_APPROVERS is empty", file=sys.stderr)
+            return 2
     if args.live:
         sizes = read_ollama_sizes()
         print(size_report(settings, sizes), file=sys.stderr)
@@ -96,8 +111,12 @@ def main(argv: list[str] | None = None) -> int:
             partition=partition,
         )
         started = time.perf_counter()
-        state = _invoke(settings, chats, prepared.ref, root)
+        state = _invoke(settings, chats, prepared.ref, root, slack=args.slack)
         wall_s = time.perf_counter() - started
+    if state is None:
+        print("waiting for Slack approval", file=sys.stderr)
+        print(json.dumps({"status": "waiting_for_slack"}))
+        return 0
     if args.live:
         print(
             _report(state, wall_s=wall_s, clean=prepared.clean, label=prepared.label),
@@ -422,7 +441,9 @@ def _invoke(
     chats: PreparedChats,
     ref: PartitionRef,
     evidence_root: Path,
-) -> MeridianState:
+    *,
+    slack: bool = False,
+) -> MeridianState | None:
     import ray
 
     checkpoint = Path(settings.checkpoint_path)
@@ -433,6 +454,11 @@ def _invoke(
             StdioSession(evidence_root) as session,
             SqliteSaver.from_conn_string(str(checkpoint)) as saver,
         ):
+            ports = None
+            if slack:
+                from meridian.slack.runtime import ports_for
+
+                ports = ports_for(settings)
             graph = build_graph(
                 num_cpus=settings.ray_num_cpus,
                 model_name=chats.triage_model,
@@ -454,12 +480,18 @@ def _invoke(
                 max_outside_change=settings.max_outside_change,
                 sample_seed=settings.llm_seed,
                 wall_budget_s=settings.run_wall_budget_s,
+                psi_min_rows=settings.psi_min_rows,
+                approval=slack,
+                approval_ports=ports,
             )
             run_id = uuid4()
-            result = graph.invoke(
+            thread = {"configurable": {"thread_id": str(run_id)}}
+            result = graph.invoke(  # type: ignore[call-overload]
                 MeridianState(run_id=run_id, partitions=[ref]),
-                {"configurable": {"thread_id": str(run_id)}},
+                thread,
             )
+            if graph.get_state(thread).next:  # type: ignore[arg-type]
+                return None
         return MeridianState.model_validate(result)
     finally:
         ray.shutdown()

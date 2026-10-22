@@ -53,6 +53,7 @@ def test_each_enum_value_round_trips_as_itself() -> None:
         ApprovalOutcome.APPROVED,
         ApprovalOutcome.REJECTED,
         ApprovalOutcome.TIMEOUT,
+        ApprovalOutcome.ACKNOWLEDGED,
     ]
 
 
@@ -155,6 +156,7 @@ def test_valid_hypothesis_patch_verdict_and_verification() -> None:
         postmortem=postmortem,
         fix_attempts=MAX_FIX_ATTEMPTS,
         critic_rounds=MAX_CRITIC_ROUNDS,
+        needs_human=True,
     )
     assert case.hypothesis is not None
     assert case.hypothesis.evidence[0] == make_evidence()
@@ -402,7 +404,7 @@ def test_parent_ids_must_match_when_both_sides_are_present() -> None:
     incident = make_incident()
     hypothesis = make_hypothesis(incident_id=incident.id)
     patch = make_patch(incident_id=incident.id, hypothesis_id=hypothesis.id)
-    IncidentCase(incident=incident, hypothesis=hypothesis, patch=patch)
+    IncidentCase(incident=incident, hypothesis=hypothesis, patch=patch, needs_human=True)
 
     with pytest.raises(ValidationError, match=r"hypothesis.incident_id"):
         IncidentCase(incident=incident, hypothesis=make_hypothesis())
@@ -422,6 +424,21 @@ def test_parent_ids_must_match_when_both_sides_are_present() -> None:
         IncidentCase(incident=incident, patch=patch, approval=make_approval())
     with pytest.raises(ValidationError, match=r"postmortem.incident_id"):
         IncidentCase(incident=incident, postmortem=make_postmortem())
+
+
+def test_escalate_requires_needs_human() -> None:
+    incident = make_incident()
+    hypothesis = make_hypothesis(incident_id=incident.id)
+    patch = make_patch(incident_id=incident.id, hypothesis_id=hypothesis.id)
+    with pytest.raises(ValidationError, match=r"ESCALATE requires needs_human"):
+        IncidentCase(incident=incident, hypothesis=hypothesis, patch=patch)
+    allowed = IncidentCase(
+        incident=incident,
+        hypothesis=hypothesis,
+        patch=patch,
+        needs_human=True,
+    )
+    assert allowed.needs_human is True
 
 
 def test_child_records_may_exist_before_their_parents() -> None:

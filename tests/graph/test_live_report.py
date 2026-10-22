@@ -46,6 +46,7 @@ def test_report_lists_nodes_verdicts_and_scores() -> None:
         hypothesis=hypothesis,
         triage=triage,
         patch=patch,
+        needs_human=True,
         dry_run=DryRunReport(
             rows_sampled=10,
             rows_changed=2,

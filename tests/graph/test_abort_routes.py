@@ -14,7 +14,7 @@ from tests.contracts.builders import (
 )
 
 from meridian.contracts.incident_case import IncidentCase
-from meridian.contracts.remediation import VerificationCheck
+from meridian.contracts.remediation import RemediationKind, VerificationCheck
 from meridian.contracts.severity import Severity
 from meridian.contracts.state import MeridianState
 from meridian.contracts.triage import TriageResult
@@ -73,7 +73,9 @@ def test_empty_and_finished_cases_end() -> None:
 def test_a_blocked_pre_critic_returns_to_fix_and_a_degraded_critic_retries() -> None:
     incident = make_incident()
     hypothesis = make_hypothesis(incident_id=incident.id)
-    patch = make_patch(incident_id=incident.id, hypothesis_id=hypothesis.id)
+    patch = make_patch(incident_id=incident.id, hypothesis_id=hypothesis.id).model_copy(
+        update={"remediation_kind": RemediationKind.DATA_REPAIR}
+    )
     blocked = IncidentCase(
         incident=incident,
         hypothesis=hypothesis,
@@ -152,7 +154,9 @@ def test_guard_records_an_abort_and_rejects_a_bad_branch() -> None:
 def test_a_failed_verification_returns_to_fix() -> None:
     incident = make_incident()
     hypothesis = make_hypothesis(incident_id=incident.id)
-    patch = make_patch(incident_id=incident.id, hypothesis_id=hypothesis.id)
+    patch = make_patch(incident_id=incident.id, hypothesis_id=hypothesis.id).model_copy(
+        update={"remediation_kind": RemediationKind.DATA_REPAIR}
+    )
     verification = make_verification(patch_id=patch.id, passed=False, failures_remaining=1)
     verification = verification.model_copy(
         update={"checks": [VerificationCheck(name="contracts", passed=False, detail="remain")]}

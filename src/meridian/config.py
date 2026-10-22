@@ -83,6 +83,17 @@ class Settings(BaseSettings):
         default=None,
         description="Channel ID where patch approvals are requested.",
     )
+    slack_approvers: str = Field(
+        default="",
+        validation_alias=AliasChoices("MERIDIAN_SLACK_APPROVERS"),
+        description="Comma-separated Slack user ids allowed to approve, reject, or acknowledge.",
+    )
+    approval_timeout_s: int = Field(
+        default=86400,
+        ge=1,
+        validation_alias=AliasChoices("MERIDIAN_APPROVAL_TIMEOUT_S"),
+        description="Seconds an approval request waits before it becomes TIMEOUT.",
+    )
     database_url: str | None = Field(
         default=None,
         description="Postgres URL reserved for the audit log. Unused in Phase 0.",
@@ -272,6 +283,12 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MERIDIAN_MAX_OUTSIDE_CHANGE"),
         description="Largest share of clean sample rows a data repair may change.",
     )
+    psi_min_rows: int = Field(
+        default=200,
+        ge=1,
+        validation_alias=AliasChoices("MERIDIAN_PSI_MIN_ROWS"),
+        description="Frames smaller than this skip PSI and record skipped_insufficient_rows.",
+    )
     rootcause_max_tool_calls: int = Field(
         default=8,
         ge=1,
@@ -383,6 +400,10 @@ class Settings(BaseSettings):
         if not _secret_present(self.xai_api_key):
             raise MeridianConfigError("xAI", ["XAI_API_KEY"])
         return self
+
+    def approver_ids(self) -> frozenset[str]:
+        """Slack user ids allowed to decide. Empty when the setting is blank."""
+        return frozenset(part.strip() for part in self.slack_approvers.split(",") if part.strip())
 
     def require_slack(self) -> Self:
         """Return self when the Slack approval gate is fully configured."""

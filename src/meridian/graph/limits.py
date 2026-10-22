@@ -23,9 +23,13 @@ def route_after_root(case: IncidentCase) -> str:
 
 def route_after_critic(case: IncidentCase) -> str:
     """Approve goes to the verifier. A degraded review is not a rejection."""
-    if case.needs_human or not case.verdicts:
+    if not case.verdicts:
         return "end"
     latest = case.verdicts[-1]
+    escalate = case.patch is not None and case.patch.remediation_kind is RemediationKind.ESCALATE
+    # A rejected escalation stops. An approved one still reaches the verifier.
+    if case.needs_human and not (escalate and latest.approved and case.verification is None):
+        return "end"
     if latest.approved:
         return "verifier"
     if latest.critic_degraded:
@@ -74,8 +78,13 @@ def begin_fix(case: IncidentCase) -> IncidentCase:
 
 
 def finish_fix(case: IncidentCase, patch: Patch) -> IncidentCase:
-    """Store the patch produced by this Fix execution."""
-    return case.model_copy(update={"patch": patch})
+    """Store the patch produced by this Fix execution.
+
+    An ESCALATE patch always needs a human. The case validator rejects the
+    other combination, so the flag is set in the same update as the patch.
+    """
+    needs = case.needs_human or patch.remediation_kind is RemediationKind.ESCALATE
+    return case.model_copy(update={"patch": patch, "needs_human": needs})
 
 
 def record_verdict(case: IncidentCase, verdict: Verdict) -> IncidentCase:
@@ -87,6 +96,8 @@ def record_verdict(case: IncidentCase, verdict: Verdict) -> IncidentCase:
         raise ValueError("verdict.round must equal the next critic round")
     verdicts = [*case.verdicts, verdict]
     needs = case.needs_human
+    if case.patch is not None and case.patch.remediation_kind is RemediationKind.ESCALATE:
+        needs = True
     degraded = sum(1 for item in verdicts if item.critic_degraded)
     if verdict.critic_degraded:
         if degraded >= 2:

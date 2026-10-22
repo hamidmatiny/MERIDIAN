@@ -22,7 +22,7 @@
         },
         "decision": {
           "$ref": "#/$defs/ApprovalOutcome",
-          "description": "APPROVED, REJECTED, or TIMEOUT."
+          "description": "APPROVED, REJECTED, TIMEOUT, or ACKNOWLEDGED. Only APPROVED may be applied."
         },
         "patch_id": {
           "description": "Patch the human decided on.",
@@ -46,7 +46,8 @@
       "enum": [
         "APPROVED",
         "REJECTED",
-        "TIMEOUT"
+        "TIMEOUT",
+        "ACKNOWLEDGED"
       ],
       "title": "ApprovalOutcome",
       "type": "string"

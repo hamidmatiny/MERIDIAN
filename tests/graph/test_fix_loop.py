@@ -317,11 +317,33 @@ def test_fix_parse_failure_escalates() -> None:
     assert state["llm_calls"][-1].succeeded is False
 
 
+def test_a_rejected_escalate_after_a_bounced_fix_needs_a_human(tmp_path: Path) -> None:
+    """Phase 4.6 unit-mismatch run 2: a bounced repair, then a rejected ESCALATE.
+
+    The critic round and the fix attempt were not equal, so the old router
+    ended with needs_human false. ESCALATE requires needs_human.
+    """
+    bounced = _draft(RemediationKind.DATA_REPAIR.value, _BAD, _CHECK)
+    escalate = _draft(RemediationKind.ESCALATE.value, "def repair(df):\n    return df\n", _CHECK)
+    state = _run(tmp_path, [bounced, escalate], [False])
+    case = _case(state)
+    assert case.patch is not None
+    assert case.patch.remediation_kind is RemediationKind.ESCALATE
+    assert case.needs_human is True
+    assert case.verdicts
+    assert case.verdicts[-1].approved is False
+
+
 def test_critic_parse_failure_rejects() -> None:
     incident = make_incident()
     hypothesis = make_hypothesis(incident_id=incident.id)
     patch = make_patch(incident_id=incident.id, hypothesis_id=hypothesis.id)
-    case = IncidentCase(incident=incident, hypothesis=hypothesis, patch=patch)
+    case = IncidentCase(
+        incident=incident,
+        hypothesis=hypothesis,
+        patch=patch,
+        needs_human=True,
+    )
 
     class _Broken:
         def with_structured_output(self, schema: object, **kwargs: object) -> "_Broken":
