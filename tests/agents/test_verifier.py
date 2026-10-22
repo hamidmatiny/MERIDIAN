@@ -8,6 +8,7 @@ from tests.contracts.builders import make_hypothesis
 
 from meridian.agents.patch_text import unified_diff
 from meridian.agents.verifier import run_verifier
+from meridian.contracts.dry_run import DryRunReport
 from meridian.contracts.fault_type import FaultType
 from meridian.contracts.incident_case import IncidentCase
 from meridian.contracts.patch import Patch
@@ -149,6 +150,43 @@ def test_missing_partition_is_a_failure(tmp_path: Path) -> None:
     assert case.verification is not None
     assert case.verification.checks[0].name == "partition"
     assert case.verification.passed is False
+
+
+def test_the_live_over_broad_trace_fails_outside_rows(tmp_path: Path) -> None:
+    state = _state(
+        tmp_path,
+        FaultType.UNIT_MISMATCH,
+        RemediationKind.DATA_REPAIR,
+        "def repair(df):\n    return df\n",
+    )
+    key, case = next(iter(state.cases.items()))
+    report = DryRunReport(
+        rows_sampled=200,
+        clean_rows=50,
+        rows_changed=200,
+        rows_changed_outside=50,
+        over_broad=True,
+        contracts_after=0,
+        rows_fixed=150,
+        rows_still_failing=0,
+    )
+    traced = state.model_copy(update={"cases": {key: case.model_copy(update={"dry_run": report})}})
+    updated = run_verifier(
+        traced,
+        num_cpus=1,
+        timeout_s=20,
+        memory_mb=256,
+        max_row_loss=0.01,
+        max_quarantine=0.25,
+        max_outside_change=0.0,
+    )
+    checked = next(iter(updated["cases"].values()))
+    assert checked.verification is not None
+    outside = next(item for item in checked.verification.checks if item.name == "outside_rows")
+    assert outside.passed is False
+    assert "rows_changed_outside=50" in outside.detail
+    assert "clean_rows=50" in outside.detail
+    assert checked.verification.passed is False
 
 
 def test_verifier_does_not_read_the_injected_fault() -> None:

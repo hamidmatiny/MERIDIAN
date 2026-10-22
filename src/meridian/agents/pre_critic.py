@@ -4,7 +4,8 @@ A syntax or sandbox-gate failure goes back to Fix. It does not spend critic
 tokens and it does not count as a critic round. A passing patch is dry-run on
 a seeded sample: every failing row, up to 150, plus random clean rows to 200.
 A repair or quarantine that fixes none of those rows is a NO_OP and returns
-to Fix without a critic round.
+to Fix without a critic round. A repair that changes rows outside the failing
+set is OVER_BROAD and returns the same way.
 """
 
 import ast
@@ -79,6 +80,19 @@ def run_pre_critic(
                 "pre_critic_attempt": case.fix_attempts,
                 "pre_critic_blocked": True,
                 "pre_critic_note": "NO_OP: rows_fixed=0",
+                "dry_run": report,
+                "needs_human": case.needs_human or case.fix_attempts >= MAX_FIX_ATTEMPTS,
+            }
+        )
+        return {"cases": {key: updated}}
+    if report.over_broad:
+        updated = case.model_copy(
+            update={
+                "pre_critic_attempt": case.fix_attempts,
+                "pre_critic_blocked": True,
+                "pre_critic_note": (
+                    f"OVER_BROAD: rows_changed_outside={report.rows_changed_outside}"
+                ),
                 "dry_run": report,
                 "needs_human": case.needs_human or case.fix_attempts >= MAX_FIX_ATTEMPTS,
             }
@@ -230,6 +244,7 @@ def _measured(
     contracts = _contracts(dataset, after, metadata, profile)
     return DryRunReport(
         rows_sampled=len(before),
+        clean_rows=max(len(before) - len(failing), 0),
         rows_changed=len(changed),
         rows_changed_outside=len(outside),
         over_broad=bool(outside),

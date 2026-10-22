@@ -94,6 +94,9 @@ def test_local_and_fake_clients_construct(tmp_path: Path) -> None:
     assert chat.hops[0].client.num_predict == 2048
     assert chat.hops[0].client.client_kwargs["timeout"] == 180
     assert chat.hops[0].client.keep_alive == 900
+    assert chat.hops[0].client.reasoning is False
+    assert chat.think is False
+    assert chat.call_timeout_s == 180
     assert chat.hops[1].client.max_tokens == 2048
     assert chat.hops[1].client.request_timeout == 180
     assert chat.hops[1].client.openai_api_key.get_secret_value() == "missing"

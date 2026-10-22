@@ -9,6 +9,11 @@ class DryRunReport(MeridianModel):
     """What a 200-row sandbox sample did, measured without a model."""
 
     rows_sampled: int = Field(ge=0, description="Rows in the dry-run sample.")
+    clean_rows: int = Field(
+        default=0,
+        ge=0,
+        description="Sample rows that were not in the incident's failing set.",
+    )
     rows_changed: int = Field(ge=0, description="Rows the remediation changed or dropped.")
     rows_changed_outside: int = Field(
         ge=0,

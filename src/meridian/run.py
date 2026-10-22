@@ -261,7 +261,9 @@ def _report(
         usd = "0.00" if call.provider not in {"anthropic", "xai"} else "paid"
         by_node.setdefault(call.node, []).append(
             f"provider={call.provider} model={call.model} fallback_used={call.fallback_used} "
-            f"temperature={call.temperature} seed={call.seed} "
+            f"temperature={call.temperature} seed={call.seed} think={call.think} "
+            f"eval_count={call.eval_count} timed_out={call.timed_out} "
+            f"latency_ms={call.latency_ms} load_duration_ms={call.load_duration_ms} "
             f"input_tokens={call.input_tokens} output_tokens={call.output_tokens} "
             f"prompt_tokens_before={call.prompt_tokens_before} "
             f"prompt_tokens_after={call.prompt_tokens_after} usd={usd}"
@@ -301,6 +303,8 @@ def _report(
             )
         if case.patch is not None:
             lines.append(f"remediation_kind={case.patch.remediation_kind.value}")
+        if case.pre_critic_note:
+            lines.append(f"pre_critic_note={case.pre_critic_note}")
         if case.dry_run is None:
             lines.append("dry_run=None")
         if case.dry_run is not None:
@@ -309,6 +313,7 @@ def _report(
                 f"rows_changed={case.dry_run.rows_changed} "
                 f"rows_changed_outside={case.dry_run.rows_changed_outside} "
                 f"rows_fixed={case.dry_run.rows_fixed} "
+                f"clean_rows={case.dry_run.clean_rows} "
                 f"rows_still_failing={case.dry_run.rows_still_failing} "
                 f"no_op={case.dry_run.no_op} "
                 f"over_broad={case.dry_run.over_broad} "
@@ -446,6 +451,7 @@ def _invoke(
                 sandbox_memory_mb=settings.sandbox_memory_mb,
                 max_row_loss=settings.max_row_loss,
                 max_quarantine=settings.max_quarantine,
+                max_outside_change=settings.max_outside_change,
                 sample_seed=settings.llm_seed,
                 wall_budget_s=settings.run_wall_budget_s,
             )

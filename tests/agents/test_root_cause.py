@@ -268,3 +268,32 @@ def test_partial_column_overlap() -> None:
     assert scored.causal_event_correct is True
     assert scored.columns_jaccard == pytest.approx(1 / 3)
     print(json.dumps(scored.model_dump()))
+
+
+def test_schema_drift_counts_either_name_in_a_rename_pair() -> None:
+    label = InjectedFault(
+        id=uuid4(),
+        fault_type=FaultType.SCHEMA_DRIFT,
+        dataset="vehicle_telemetry",
+        columns_affected=["vehicle_id", "vehicle_id_renamed"],
+        rows_affected=1,
+        intensity=0.1,
+        seed=1,
+        causal_event_id=uuid4(),
+    )
+    hypothesis = Hypothesis(
+        id=uuid4(),
+        incident_id=uuid4(),
+        root_cause_summary="renamed",
+        confidence=0.4,
+        causal_event_id=label.causal_event_id,
+        suspect_columns=["vehicle_id"],
+        mechanism="rename",
+    )
+    assert score(hypothesis, label).columns_jaccard == 1.0
+    renamed = hypothesis.model_copy(update={"suspect_columns": ["vehicle_id_renamed"]})
+    assert score(renamed, label).columns_jaccard == 1.0
+    missed = hypothesis.model_copy(update={"suspect_columns": ["speed", "velocity"]})
+    assert score(missed, label).columns_jaccard == 0.0
+    plain = label.model_copy(update={"fault_type": FaultType.UNIT_MISMATCH})
+    assert score(hypothesis, plain).columns_jaccard == pytest.approx(0.5)

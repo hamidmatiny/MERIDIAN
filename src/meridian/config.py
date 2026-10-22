@@ -265,6 +265,13 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MERIDIAN_MAX_QUARANTINE"),
         description="Largest share of rows a quarantine may remove.",
     )
+    max_outside_change: float = Field(
+        default=0.0,
+        ge=0,
+        le=1,
+        validation_alias=AliasChoices("MERIDIAN_MAX_OUTSIDE_CHANGE"),
+        description="Largest share of clean sample rows a data repair may change.",
+    )
     rootcause_max_tool_calls: int = Field(
         default=8,
         ge=1,

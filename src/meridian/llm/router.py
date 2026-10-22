@@ -6,6 +6,7 @@ name one model: ``auto`` and combo names are rejected so a benchmark can be repe
 """
 
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from pydantic import SecretStr
@@ -44,6 +45,7 @@ class FallbackChat:
         temperature: float = 0,
         seed: int = 42,
         deadline: float | None = None,
+        call_timeout_s: float | None = None,
     ) -> None:
         if not hops:
             raise MeridianConfigError("LLM", ["a provider chain"])
@@ -61,6 +63,8 @@ class FallbackChat:
         self.temperature = temperature
         self.seed = seed
         self.deadline = deadline
+        self.call_timeout_s = call_timeout_s
+        self.think = bool(getattr(hops[0].client, "reasoning", False))
         self.timeouts: list[TimeoutNote] = []
         self.last_latency_ms = 0
         self.last_load_ms = 0
@@ -87,9 +91,10 @@ class FallbackChat:
                 if self.deadline is not None and _now() >= self.deadline:
                     raise RunAborted("WALL_BUDGET", "run wall budget exceeded")
                 started = _now()
+                self.think = bool(getattr(hop.client, "reasoning", False))
                 try:
                     self.budget.preflight(hop.provider, hop.model, _estimate(messages))
-                    result = action(hop)
+                    result = self._bounded(action, hop)
                 except BudgetError as exc:
                     self.gate.trip(f"BILLING: {exc}")
                     raise RunAborted("BILLING", str(exc)) from exc
@@ -131,6 +136,19 @@ class FallbackChat:
             raise RuntimeError("no provider left in the chain")
         raise last
 
+    def _bounded(self, action: Callable[[Hop], Any], hop: Hop) -> Any:
+        """Stop the call at the deadline, including a stream that keeps sending tokens."""
+        if self.call_timeout_s is None:
+            return action(hop)
+        pool = ThreadPoolExecutor(max_workers=1)
+        future = pool.submit(action, hop)
+        try:
+            return future.result(timeout=self.call_timeout_s)
+        except TimeoutError as exc:
+            raise TimeoutError("timed out") from exc
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+
     def _account(self, hop: Hop, result: object, index: int) -> None:
         self.provider_name = hop.provider
         self.active_model = hop.model
@@ -156,6 +174,7 @@ class FallbackBound:
         self.abort_gate = parent.gate
         self.temperature = parent.temperature
         self.seed = parent.seed
+        self.think = parent.think
 
     def invoke(self, messages: Any, **kwargs: Any) -> Any:
         del kwargs
@@ -251,6 +270,7 @@ def build_node_chat(
         temperature=0,
         seed=settings.llm_seed,
         deadline=_now() + settings.run_wall_budget_s,
+        call_timeout_s=settings.llm_timeout_s,
     )
     return chat, hops[0][1]
 
@@ -339,6 +359,7 @@ def _client(settings: Settings, provider: str, model: str, node: str) -> Any:
             "seed": settings.llm_seed,
             "num_ctx": settings.llm_num_ctx,
             "num_predict": settings.llm_max_output_tokens,
+            "reasoning": False,
             "client_kwargs": {"timeout": settings.llm_timeout_s},
         }
         if model in resident:

@@ -8,6 +8,7 @@ import pandas as pd
 from pydantic import ValidationError
 
 from meridian.agents.patch_text import source_from_diff
+from meridian.contracts.dry_run import DryRunReport
 from meridian.contracts.partition_ref import PartitionRef
 from meridian.contracts.patch import Patch
 from meridian.contracts.reference_profile import ReferenceProfile
@@ -36,6 +37,7 @@ def run_verifier(
     memory_mb: int,
     max_row_loss: float,
     max_quarantine: float,
+    max_outside_change: float = 0.0,
 ) -> dict[str, object]:
     """Replay the current patch. Escalation and a failure at the cap need a human."""
     if len(state.cases) != 1:
@@ -94,6 +96,8 @@ def run_verifier(
             memory_mb=memory_mb,
             num_cpus=num_cpus,
             max_row_loss=max_row_loss,
+            dry_run=case.dry_run,
+            max_outside_change=max_outside_change,
             started=started,
         )
     updated = record_verification(case, result, escalate=False)
@@ -108,6 +112,8 @@ def _repair(
     memory_mb: int,
     num_cpus: int,
     max_row_loss: float,
+    dry_run: DryRunReport | None,
+    max_outside_change: float,
     started: float,
 ) -> VerificationResult:
     loaded = _load(ref)
@@ -146,6 +152,7 @@ def _repair(
         _regression(patch.regression_test, repaired, timeout_s, memory_mb, num_cpus),
         _row_loss(len(frame), len(repaired), max_row_loss),
         _psi(repaired, profile),
+        _outside_rows(dry_run, max_outside_change),
     ]
     return _result(patch.id, patch.remediation_kind, checks, remaining, len(repaired), started)
 
@@ -293,6 +300,26 @@ def _row_loss(before: int, after: int, cap: float) -> VerificationCheck:
         name="row_loss",
         passed=dropped <= cap,
         detail=f"dropped {dropped:.3f}; cap {cap:.3f}",
+    )
+
+
+def _outside_rows(dry_run: DryRunReport | None, cap: float) -> VerificationCheck:
+    """Fail a repair that rewrites clean rows in the dry-run sample."""
+    if dry_run is None:
+        return VerificationCheck(
+            name="outside_rows",
+            passed=False,
+            detail="No dry-run sample, so the clean-row change was not measured.",
+        )
+    changed = dry_run.rows_changed_outside
+    clean = dry_run.clean_rows
+    ratio = 1.0 if clean == 0 and changed > 0 else (0.0 if clean == 0 else changed / clean)
+    return VerificationCheck(
+        name="outside_rows",
+        passed=ratio <= cap,
+        detail=(
+            f"rows_changed_outside={changed} clean_rows={clean} ratio={ratio:.3f} cap={cap:.3f}"
+        ),
     )
 
 

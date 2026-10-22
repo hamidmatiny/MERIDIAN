@@ -14,6 +14,13 @@
       "title": "Corrective",
       "type": "boolean"
     },
+    "eval_count": {
+      "default": 0,
+      "description": "Ollama eval_count, the tokens generated for this attempt.",
+      "minimum": 0,
+      "title": "Eval Count",
+      "type": "integer"
+    },
     "fallback_used": {
       "default": false,
       "description": "True when an earlier hop in the node's chain failed over.",
@@ -102,6 +109,12 @@
       "description": "Sampling temperature sent with the call.",
       "title": "Temperature",
       "type": "number"
+    },
+    "think": {
+      "default": false,
+      "description": "True when this call was sent with thinking enabled.",
+      "title": "Think",
+      "type": "boolean"
     },
     "timed_out": {
       "default": false,

@@ -89,6 +89,8 @@ def make_llm_call(
         seed=_seed(getattr(owner, "seed", 42)),
         corrective=corrective,
         load_duration_ms=loaded,
+        think=bool(getattr(owner, "think", False)),
+        eval_count=_eval_count(raw),
     )
 
 
@@ -132,6 +134,7 @@ def assemble_calls(
                 temperature=_float(getattr(owner, "temperature", 0.0)),
                 seed=_seed(getattr(owner, "seed", 42)),
                 timed_out=True,
+                think=bool(getattr(owner, "think", False)),
             )
         )
         number += 1
@@ -155,6 +158,16 @@ def assemble_calls(
 def _owner(bound: object) -> object:
     parent = getattr(bound, "parent", None)
     return parent if parent is not None else bound
+
+
+def _eval_count(raw: object) -> int:
+    meta = getattr(raw, "response_metadata", None)
+    if isinstance(raw, dict):
+        nested = raw.get("response_metadata")
+        meta = nested if isinstance(nested, dict) else raw
+    if not isinstance(meta, dict):
+        return 0
+    return _whole(meta.get("eval_count"))
 
 
 def _load_ms(raw: object) -> int:

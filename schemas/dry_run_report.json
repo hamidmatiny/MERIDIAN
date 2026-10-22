@@ -2,6 +2,13 @@
   "additionalProperties": false,
   "description": "What a 200-row sandbox sample did, measured without a model.",
   "properties": {
+    "clean_rows": {
+      "default": 0,
+      "description": "Sample rows that were not in the incident's failing set.",
+      "minimum": 0,
+      "title": "Clean Rows",
+      "type": "integer"
+    },
     "contracts_after": {
       "description": "Incidents remaining on the sample afterward.",
       "minimum": 0,

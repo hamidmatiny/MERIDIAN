@@ -54,3 +54,12 @@ class LLMCall(MeridianModel):
         ge=0,
         description="Ollama load_duration for this attempt, in milliseconds. Zero when unreported.",
     )
+    think: bool = Field(
+        default=False,
+        description="True when this call was sent with thinking enabled.",
+    )
+    eval_count: int = Field(
+        default=0,
+        ge=0,
+        description="Ollama eval_count, the tokens generated for this attempt.",
+    )

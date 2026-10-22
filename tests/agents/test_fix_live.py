@@ -108,6 +108,7 @@ def _live(tmp_path: Path, dataset: str, fault: FaultType) -> None:
                 sandbox_memory_mb=settings.sandbox_memory_mb,
                 max_row_loss=settings.max_row_loss,
                 max_quarantine=settings.max_quarantine,
+                max_outside_change=settings.max_outside_change,
                 sample_seed=settings.llm_seed,
                 wall_budget_s=settings.run_wall_budget_s,
             )

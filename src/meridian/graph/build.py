@@ -116,6 +116,7 @@ def build_graph(
     sandbox_memory_mb: int = 512,
     max_row_loss: float = 0.01,
     max_quarantine: float = 0.25,
+    max_outside_change: float = 0.0,
     sample_seed: int = 42,
     wall_budget_s: float = 900,
     detected_at: datetime | None = None,
@@ -237,6 +238,7 @@ def build_graph(
             memory_mb=sandbox_memory_mb,
             max_row_loss=max_row_loss,
             max_quarantine=max_quarantine,
+            max_outside_change=max_outside_change,
         )
 
     graph: StateGraph[MeridianState, None, MeridianState, MeridianState] = StateGraph(MeridianState)

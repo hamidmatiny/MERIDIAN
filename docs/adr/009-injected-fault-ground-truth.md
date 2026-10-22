@@ -14,6 +14,8 @@ Each injector is a pure function, `inject_<fault>(df, rng, intensity)`, and retu
 
 An `Incident` id is a UUID5 of `(dataset, partition_date, contract_name, fault_type)` under the same namespace. Evaluating the same fault twice produces the same id.
 
+For `SCHEMA_DRIFT` only, `score_root_cause` treats a rename pair as one column. The injector records both names (`vehicle_id` and `vehicle_id_renamed`). `columns_jaccard` counts that column as matched when the hypothesis names either the original or the renamed form. Other fault types keep a plain Jaccard of `suspect_columns` against `columns_affected`. The scorer still does not read the frame.
+
 ## Consequences
 
 - A detection is correct when `Incident.fault_type` equals `InjectedFault.fault_type`. The matrix test is that comparison.

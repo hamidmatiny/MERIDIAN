@@ -101,6 +101,13 @@
       "additionalProperties": false,
       "description": "What a 200-row sandbox sample did, measured without a model.",
       "properties": {
+        "clean_rows": {
+          "default": 0,
+          "description": "Sample rows that were not in the incident's failing set.",
+          "minimum": 0,
+          "title": "Clean Rows",
+          "type": "integer"
+        },
         "contracts_after": {
           "description": "Incidents remaining on the sample afterward.",
           "minimum": 0,
@@ -630,6 +637,13 @@
           "title": "Corrective",
           "type": "boolean"
         },
+        "eval_count": {
+          "default": 0,
+          "description": "Ollama eval_count, the tokens generated for this attempt.",
+          "minimum": 0,
+          "title": "Eval Count",
+          "type": "integer"
+        },
         "fallback_used": {
           "default": false,
           "description": "True when an earlier hop in the node's chain failed over.",
@@ -718,6 +732,12 @@
           "description": "Sampling temperature sent with the call.",
           "title": "Temperature",
           "type": "number"
+        },
+        "think": {
+          "default": false,
+          "description": "True when this call was sent with thinking enabled.",
+          "title": "Think",
+          "type": "boolean"
         },
         "timed_out": {
           "default": false,

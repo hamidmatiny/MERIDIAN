@@ -9,14 +9,22 @@ token, so an HTTP 401 looked like a model that simply had no structured method.
 
 ## Decision
 
-Each call waits at most `MERIDIAN_LLM_TIMEOUT_S` (180). Output is capped at
+Each call waits at most `MERIDIAN_LLM_TIMEOUT_S` (180). That limit is a deadline around the
+whole invoke, including a stream. An httpx read timeout resets on every token, so a thinking
+model can stream for many minutes and still record `timed_out=false`. A 789 s fix call did
+that. The deadline is `Future.result(timeout=...)`. Output is capped at
 `MERIDIAN_LLM_MAX_OUTPUT_TOKENS` (2048), which Ollama receives as `num_predict`. Local context
 is `MERIDIAN_LLM_NUM_CTX` (8192). A timeout is transient: one retry, then the next provider.
 Other transient HTTP errors still retry twice. Each timeout is an `LLMCall` with `timed_out`
 set. Ollama `load_duration` is stored as `load_duration_ms`, and the run report sums it.
 
+Submit-tool nodes send `think=false` (`ChatOllama(reasoning=False)`). `LLMCall` records
+`think` and Ollama `eval_count`. Qwen3.5 and Gemma 4 think by default on Ollama 0.40.6, and
+those thinking tokens count toward `num_predict`.
+
 `keep_alive` for the fix and critic model tags is the run wall budget, so both can stay
-resident while the run lasts. A run that exceeds `MERIDIAN_RUN_WALL_BUDGET_S` (900) aborts as
+resident while the run lasts. The server is also started with `OLLAMA_MAX_LOADED_MODELS=2`
+and `OLLAMA_KEEP_ALIVE=15m`. A run that exceeds `MERIDIAN_RUN_WALL_BUDGET_S` (900) aborts as
 `WALL_BUDGET`, checkpoints that state, and sets `needs_human`.
 
 A live start refuses when the distinct configured local tags exceed `MERIDIAN_MAX_MODEL_GB`

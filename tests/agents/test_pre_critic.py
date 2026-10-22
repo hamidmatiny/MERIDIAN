@@ -385,3 +385,49 @@ def test_a_noop_null_explosion_is_flagged_without_a_critic_round(tmp_path: Path)
     assert updated.dry_run.no_op is True
     assert updated.dry_run.rows_fixed == 0
     assert updated.dry_run.rows_still_failing > 0
+
+
+def test_an_over_broad_repair_returns_to_fix_without_a_critic_round(tmp_path: Path) -> None:
+    ref = write_partition(
+        tmp_path,
+        dataset="vehicle_telemetry",
+        fault=FaultType.UNIT_MISMATCH,
+        intensity=0.1,
+        seed=42,
+        rows=40,
+        name="wide",
+    )
+    incident = make_incident().model_copy(
+        update={"dataset": ref.dataset, "fault_type": FaultType.UNIT_MISMATCH}
+    )
+    hypothesis = make_hypothesis(incident_id=incident.id)
+    source = (
+        "def repair(df):\n"
+        "    out = df.copy()\n"
+        "    out['speed_mps'] = out['speed_mps'] / 3.6\n"
+        "    return out\n"
+    )
+    patch = make_patch(incident_id=incident.id, hypothesis_id=hypothesis.id).model_copy(
+        update={
+            "remediation_kind": RemediationKind.DATA_REPAIR,
+            "diff": unified_diff("remediations/x.py", source),
+            "regression_test": "def check(df):\n    return None\n",
+        }
+    )
+    case = IncidentCase(incident=incident, hypothesis=hypothesis, patch=patch, fix_attempts=1)
+    update = run_pre_critic(
+        MeridianState(run_id=uuid4(), partitions=[ref], cases={str(incident.id): case}),
+        num_cpus=1,
+        timeout_s=30,
+        memory_mb=512,
+        sample_seed=42,
+    )
+    updated = update["cases"][str(incident.id)]
+    assert updated.pre_critic_blocked is True
+    assert updated.critic_rounds == 0
+    assert updated.pre_critic_note.startswith("OVER_BROAD: rows_changed_outside=")
+    assert updated.dry_run is not None
+    assert updated.dry_run.over_broad is True
+    assert updated.dry_run.no_op is False
+    assert updated.dry_run.rows_changed_outside > 0
+    assert updated.dry_run.clean_rows > 0
