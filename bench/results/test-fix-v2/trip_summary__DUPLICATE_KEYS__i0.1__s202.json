@@ -1,0 +1,109 @@
+{
+  "abort_reason": "",
+  "applied": false,
+  "cases": [
+    {
+      "causal_event_correct": true,
+      "columns_jaccard": 1.0,
+      "critic_approved": true,
+      "critic_corrective": false,
+      "critic_degraded": false,
+      "escalated": false,
+      "fault": "DUPLICATE_KEYS",
+      "floor_raised": false,
+      "floor_severity": "SEV3",
+      "grounding_violations": 0,
+      "guardrail_fn": false,
+      "has_hypothesis": true,
+      "has_verdict": true,
+      "kind": "DATA_REPAIR",
+      "kind_appropriate": true,
+      "llm_severity": "SEV3",
+      "raw_causal_correct": true,
+      "repaired_matches_clean": true,
+      "severity": "SEV3",
+      "verified": false
+    }
+  ],
+  "completed": true,
+  "dataset": "trip_summary",
+  "decision": "BENCH_NO_HUMAN",
+  "fault": "DUPLICATE_KEYS",
+  "incidents": [
+    {
+      "fault": "DUPLICATE_KEYS",
+      "id": "c84229d8-4136-58bb-a8a4-c47e0226487f"
+    }
+  ],
+  "input_tokens": 109413,
+  "intensity": 0.1,
+  "machine_time_s": 299.86562,
+  "node_latency_ms": {
+    "critic": [
+      6432,
+      7967,
+      2663
+    ],
+    "fix": [
+      19831,
+      4620,
+      5112,
+      6424,
+      3973,
+      20969,
+      11366,
+      2311,
+      2824,
+      2993,
+      4764,
+      49276,
+      10424,
+      4670,
+      5157,
+      4226,
+      3860,
+      4974,
+      4462,
+      24131
+    ],
+    "root_cause": [
+      14092,
+      4410,
+      3348,
+      3397,
+      6943,
+      6228,
+      8474,
+      16578
+    ],
+    "triage": [
+      22209
+    ]
+  },
+  "output_tokens": 3626,
+  "run_key": "trip_summary__DUPLICATE_KEYS__i0.1__s202",
+  "seed": 202,
+  "split": "test",
+  "structured": {
+    "critic": {
+      "n": 3,
+      "ok": 3
+    },
+    "fix": {
+      "n": 3,
+      "ok": 3
+    },
+    "root_cause": {
+      "n": 1,
+      "ok": 1
+    },
+    "triage": {
+      "n": 1,
+      "ok": 1
+    }
+  },
+  "timeouts": 0,
+  "usd": 0.0,
+  "wall_abort": false,
+  "wall_s": 303.0763687910003
+}

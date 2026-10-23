@@ -1,0 +1,109 @@
+{
+  "abort_reason": "",
+  "applied": false,
+  "cases": [
+    {
+      "causal_event_correct": true,
+      "columns_jaccard": 0.5,
+      "critic_approved": true,
+      "critic_corrective": true,
+      "critic_degraded": false,
+      "escalated": false,
+      "fault": "DUPLICATE_KEYS",
+      "floor_raised": false,
+      "floor_severity": "SEV2",
+      "grounding_violations": 0,
+      "guardrail_fn": false,
+      "has_hypothesis": true,
+      "has_verdict": true,
+      "kind": "DATA_REPAIR",
+      "kind_appropriate": true,
+      "llm_severity": "SEV2",
+      "raw_causal_correct": true,
+      "repaired_matches_clean": true,
+      "severity": "SEV2",
+      "verified": false
+    }
+  ],
+  "completed": true,
+  "dataset": "vehicle_telemetry",
+  "decision": "BENCH_NO_HUMAN",
+  "fault": "DUPLICATE_KEYS",
+  "incidents": [
+    {
+      "fault": "DUPLICATE_KEYS",
+      "id": "67725161-29f3-5650-982b-50ecdb1c02db"
+    }
+  ],
+  "input_tokens": 139659,
+  "intensity": 0.1,
+  "machine_time_s": 435.347725,
+  "node_latency_ms": {
+    "critic": [
+      12610,
+      1183,
+      9531,
+      7170,
+      1120
+    ],
+    "fix": [
+      22450,
+      4827,
+      5342,
+      8284,
+      4498,
+      4875,
+      36348,
+      69160,
+      9821,
+      7173,
+      10021,
+      7172,
+      9960,
+      9730,
+      7556,
+      46948,
+      11967,
+      5088,
+      5723,
+      4538,
+      4239,
+      7261,
+      40602
+    ],
+    "root_cause": [
+      12816,
+      6674,
+      15339
+    ],
+    "triage": [
+      24692
+    ]
+  },
+  "output_tokens": 5089,
+  "run_key": "vehicle_telemetry__DUPLICATE_KEYS__i0.1__s202",
+  "seed": 202,
+  "split": "test",
+  "structured": {
+    "critic": {
+      "n": 5,
+      "ok": 3
+    },
+    "fix": {
+      "n": 3,
+      "ok": 3
+    },
+    "root_cause": {
+      "n": 1,
+      "ok": 1
+    },
+    "triage": {
+      "n": 1,
+      "ok": 1
+    }
+  },
+  "timeouts": 0,
+  "usd": 0.0,
+  "wall_abort": false,
+  "wall_s": 438.65461841700017
+}

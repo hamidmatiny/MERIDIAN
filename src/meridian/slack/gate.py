@@ -42,6 +42,7 @@ class ApprovalPorts:
     channel: str
     open_index: OpenIndex
     audit: AuditLog | None = None
+    bench: bool = False
 
 
 def post_wall_escalation(ports: ApprovalPorts, state: MeridianState | None, run_id: UUID) -> None:
@@ -62,6 +63,8 @@ def post_wall_escalation(ports: ApprovalPorts, state: MeridianState | None, run_
 
 def run_approval(state: MeridianState, ports: ApprovalPorts) -> dict[str, object]:
     """Post the request, then stop until a person or the timeout resumes the graph."""
+    if ports.bench:
+        return {}
     if state.aborted and state.abort_reason == "WALL_BUDGET":
         post_wall_escalation(ports, state, state.run_id)
         if len(state.cases) != 1:

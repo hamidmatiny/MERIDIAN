@@ -1,0 +1,98 @@
+{
+  "abort_reason": "",
+  "applied": false,
+  "cases": [
+    {
+      "causal_event_correct": true,
+      "columns_jaccard": 0.5,
+      "critic_approved": true,
+      "critic_corrective": false,
+      "critic_degraded": false,
+      "escalated": false,
+      "fault": "DUPLICATE_KEYS",
+      "floor_raised": false,
+      "floor_severity": "SEV2",
+      "grounding_violations": 0,
+      "guardrail_fn": false,
+      "has_hypothesis": true,
+      "has_verdict": true,
+      "kind": "DATA_REPAIR",
+      "kind_appropriate": true,
+      "llm_severity": "SEV2",
+      "raw_causal_correct": true,
+      "repaired_matches_clean": false,
+      "severity": "SEV2",
+      "verified": false
+    }
+  ],
+  "completed": true,
+  "dataset": "vehicle_telemetry",
+  "decision": "BENCH_NO_HUMAN",
+  "fault": "DUPLICATE_KEYS",
+  "incidents": [
+    {
+      "fault": "DUPLICATE_KEYS",
+      "id": "67725161-29f3-5650-982b-50ecdb1c02db"
+    }
+  ],
+  "input_tokens": 80327,
+  "intensity": 0.5,
+  "machine_time_s": 284.043132,
+  "node_latency_ms": {
+    "critic": [
+      7097
+    ],
+    "fix": [
+      21534,
+      4657,
+      5134,
+      4215,
+      3972,
+      5109,
+      7112,
+      32804,
+      11658,
+      2474,
+      6418,
+      41364,
+      11394,
+      2470,
+      6410,
+      49884
+    ],
+    "root_cause": [
+      13718,
+      6431,
+      14254
+    ],
+    "triage": [
+      23691
+    ]
+  },
+  "output_tokens": 3545,
+  "run_key": "vehicle_telemetry__DUPLICATE_KEYS__i0.5__s202",
+  "seed": 202,
+  "split": "test",
+  "structured": {
+    "critic": {
+      "n": 1,
+      "ok": 1
+    },
+    "fix": {
+      "n": 3,
+      "ok": 3
+    },
+    "root_cause": {
+      "n": 1,
+      "ok": 1
+    },
+    "triage": {
+      "n": 1,
+      "ok": 1
+    }
+  },
+  "timeouts": 0,
+  "usd": 0.0,
+  "wall_abort": false,
+  "wall_s": 287.2878276249976
+}

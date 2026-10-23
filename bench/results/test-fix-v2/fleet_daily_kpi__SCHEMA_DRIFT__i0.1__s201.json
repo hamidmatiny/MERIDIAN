@@ -1,0 +1,90 @@
+{
+  "abort_reason": "",
+  "applied": false,
+  "cases": [
+    {
+      "causal_event_correct": true,
+      "columns_jaccard": 1.0,
+      "critic_approved": true,
+      "critic_corrective": false,
+      "critic_degraded": false,
+      "escalated": false,
+      "fault": "SCHEMA_DRIFT",
+      "floor_raised": false,
+      "floor_severity": "SEV3",
+      "grounding_violations": 0,
+      "guardrail_fn": false,
+      "has_hypothesis": true,
+      "has_verdict": true,
+      "kind": "DATA_REPAIR",
+      "kind_appropriate": true,
+      "llm_severity": "SEV3",
+      "raw_causal_correct": true,
+      "repaired_matches_clean": true,
+      "severity": "SEV3",
+      "verified": true
+    }
+  ],
+  "completed": true,
+  "dataset": "fleet_daily_kpi",
+  "decision": "BENCH_NO_HUMAN",
+  "fault": "SCHEMA_DRIFT",
+  "incidents": [
+    {
+      "fault": "SCHEMA_DRIFT",
+      "id": "cbb9f001-2ebe-5724-8262-61e1ec9d6089"
+    }
+  ],
+  "input_tokens": 23413,
+  "intensity": 0.1,
+  "machine_time_s": 110.057139,
+  "node_latency_ms": {
+    "critic": [
+      2436
+    ],
+    "fix": [
+      10538,
+      3615,
+      19202
+    ],
+    "root_cause": [
+      6490,
+      6338,
+      3724,
+      5189,
+      6075,
+      6820,
+      7163,
+      18060
+    ],
+    "triage": [
+      14126
+    ]
+  },
+  "output_tokens": 1280,
+  "run_key": "fleet_daily_kpi__SCHEMA_DRIFT__i0.1__s201",
+  "seed": 201,
+  "split": "test",
+  "structured": {
+    "critic": {
+      "n": 1,
+      "ok": 1
+    },
+    "fix": {
+      "n": 1,
+      "ok": 1
+    },
+    "root_cause": {
+      "n": 1,
+      "ok": 1
+    },
+    "triage": {
+      "n": 1,
+      "ok": 1
+    }
+  },
+  "timeouts": 0,
+  "usd": 0.0,
+  "wall_abort": false,
+  "wall_s": 113.2694771250026
+}

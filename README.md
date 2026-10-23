@@ -2,7 +2,7 @@
 
 MERIDIAN is being built to detect data-quality failures, explain them, propose a fix, verify that fix against the failing data, and ask a human in Slack before anything merges. The path is a fixed LangGraph state machine. The goal is to shorten the time from incident to a verified, approved fix.
 
-This repository has Phases 0 through 4: contracts, the injector, Sentinel → Triage, root cause, and the Fix → Critic → Verifier loop. Phase 5 (Slack approval and the postmortem) is in progress. The run wall budget starts when the CLI process starts, and a watchdog aborts a blocked call. Unit tests do not call a model or Slack.
+This repository has Phases 0 through 6: contracts, the injector, Sentinel → Triage, root cause, the Fix → Critic → Verifier loop, Slack approval and the postmortem, and MERIDIAN-Bench. Phase 7 is not started. The run wall budget starts when the CLI process starts, and a watchdog aborts a blocked call. Unit tests do not call a model or Slack.
 
 ## Target agent graph
 
@@ -74,8 +74,8 @@ Loop limits, enforced on each `IncidentCase`: a critic rejection under round 3 r
 | 2 | Graph skeleton: Sentinel to Triage | done |
 | 3 | RootCause agent with MCP tools | done |
 | 4 | Fix, Critic, and Verifier loop on Ray | done |
-| 5 | Slack approval gate and Postmortem | in progress |
-| 6 | MERIDIAN-Bench harness and published results | planned |
+| 5 | Slack approval gate and Postmortem | done |
+| 6 | MERIDIAN-Bench harness and published results | done |
 | 7 | OpenTelemetry, cost tracking, Docker Compose demo | planned |
 
 ## What is in this tree
@@ -87,15 +87,15 @@ Loop limits, enforced on each `IncidentCase`: a critic rejection under round 3 r
 - `src/meridian/sandbox/` — AST gate and the Ray task that runs a remediation.
 - `src/meridian/mcp_servers/` — read-only lineage, data, and history tools.
 - `src/meridian/graph/` — one branch per incident: triage, root cause, then Fix, Critic, and Verifier inside the caps above. The checkpointer is still SQLite.
-- `src/meridian/prompts/` — `triage.v1.md`, `root_cause.v1.md`, `fix.v1.md`, and `critic.v1.md`.
-- `src/meridian/bench/` — `score_root_cause.py` and `score_fix.py`. Both are unit-tested. No accuracy is published from them.
+- `src/meridian/prompts/` — `triage.v1.md`, `root_cause.v1.md`, `fix.v1.md`, `fix.v2.md`, and `critic.v1.md`.
+- `src/meridian/bench/` — the harness, the hard-mode generator, and the scorers. Published numbers are in `bench/results/`.
 - `src/meridian/run.py` — `python -m meridian.run`. `--fake-llm` is the default. `--live` calls Claude for triage, root cause, and fix, and Grok for the critic.
 - `src/meridian/injector/` — one injector per fault type, the seeded `events.jsonl` log, and the `python -m meridian.injector` CLI.
 - `src/meridian/config.py` — settings loaded from the environment and `.env`. Missing keys do not crash import. `Settings.require_anthropic()`, `Settings.require_xai()`, and `Settings.require_slack()` raise when a caller actually needs those credentials. `--live` asks for Anthropic, then the four model names, then xAI.
 - `schemas/` — JSON Schema generated from the contracts.
 - `src/meridian/slack/` — Block Kit, the approval interrupt, apply-to-directory, and the postmortem.
 - `src/meridian/slack_app.py` — `python -m meridian.slack_app`. Socket Mode and the graph worker.
-- `docs/adr/` — ADR-001 through ADR-030.
+- `docs/adr/` — ADR-001 through ADR-034.
 - `.github/workflows/ci.yml` — the checks below.
 
 Generated Parquet under `data/` is gitignored.
@@ -141,6 +141,37 @@ Event Subscriptions: turn them on, subscribe the bot to `app_mention`, and reins
 Mention the bot by its user id, not by display name: `@bot status` lists open cases, `@bot help` lists the commands.
 
 `python -m meridian.slack_app` runs the socket and the worker. `python -m meridian.run --slack` posts the request and returns. The click resumes the checkpoint.
+
+## Results
+
+Numbers below are copied from `bench/results/test-fix-v2/summary.json` and `bench/results/hard/summary.json`. The full write-up is [bench/results/test-fix-v2/REPORT.md](bench/results/test-fix-v2/REPORT.md). Hard mode is [bench/results/hard/REPORT.md](bench/results/hard/REPORT.md).
+
+The test split used fix.v2. Its summary's hard-mode rate is 0/0 because that split injects faults. The false-positive rate is the hard split.
+
+| metric | value | source |
+| --- | --- | --- |
+| detection recall | 72/72 | test-fix-v2 |
+| hard-mode FP rate | 0/30 | hard |
+| causal accuracy | 72/72 | test-fix-v2 |
+| kind_appropriate | 67/70 | test-fix-v2 |
+| verified | 27/72 | test-fix-v2 |
+| false-fix rate | 0/27 | test-fix-v2 |
+| escalation rate | 15/72 | test-fix-v2 |
+| machine time p50 | 261.621484 | test-fix-v2 |
+| USD per run | 0.0 | test-fix-v2 |
+
+Dev versus test, from the comparisons stored on the test summary:
+
+| metric | dev-fix-v1 | dev-fix-v2 | test |
+| --- | --- | --- | --- |
+| detection recall | 6/6 | 6/6 | 72/72 |
+| causal accuracy | 6/6 | 6/6 | 72/72 |
+| kind_appropriate | 3/6 | 6/6 | 67/70 |
+| verified | 4/6 | 3/6 | 27/72 |
+| false-fix rate | 0/4 | 0/3 | 0/27 |
+| escalation rate | 2/6 | 1/6 | 15/72 |
+| machine time p50 | 241.808319 | 301.392669 | 261.621484 |
+| USD per run | 0.0 | 0.0 | 0.0 |
 
 ## License
 

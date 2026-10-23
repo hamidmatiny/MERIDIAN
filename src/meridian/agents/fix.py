@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import time
 from string import Template
 from typing import Any
@@ -34,6 +35,13 @@ from meridian.llm.usage import assemble_calls
 from meridian.mcp_servers.client import invoke_tool
 from meridian.prompts import FIX_PROMPT_NAME, FIX_PROMPT_VERSION, load_prompt
 
+
+def active_fix_version() -> str:
+    """``MERIDIAN_FIX_PROMPT_VERSION`` selects a bench iteration. The default is v1."""
+    override = os.environ.get("MERIDIAN_FIX_PROMPT_VERSION", "").strip()
+    return override or FIX_PROMPT_VERSION
+
+
 NODE = "fix"
 
 
@@ -59,7 +67,7 @@ def render_fix_prompt(
     hypothesis = "{}" if case.hypothesis is None else case.hypothesis.model_dump_json()
     triage = "{}" if case.triage is None else case.triage.model_dump_json()
     sent_json, full_json = incident_json(case.incident)
-    template = Template(load_prompt(FIX_PROMPT_NAME, FIX_PROMPT_VERSION))
+    template = Template(load_prompt(FIX_PROMPT_NAME, active_fix_version()))
     fields = {
         "triage_json": triage,
         "hypothesis_json": hypothesis,
@@ -82,9 +90,10 @@ def run_fix(
     max_tool_calls: int,
     max_row_loss: float,
     max_quarantine: float,
-    prompt_version: str = FIX_PROMPT_VERSION,
+    prompt_version: str | None = None,
 ) -> dict[str, object]:
     """Propose one remediation for the single case and count the Fix execution."""
+    prompt_version = active_fix_version() if prompt_version is None else prompt_version
     if state.aborted:
         return {"aborted": True, "abort_reason": state.abort_reason}
     if len(state.cases) != 1:
@@ -119,6 +128,13 @@ def run_fix(
 
 
 def _feedback(case: IncidentCase) -> str:
+    """v1 stays a loose list. Later versions use a fixed block the retry can parse."""
+    if active_fix_version() == FIX_PROMPT_VERSION:
+        return _feedback_v1(case)
+    return _feedback_v2(case)
+
+
+def _feedback_v1(case: IncidentCase) -> str:
     parts: list[str] = []
     if case.dry_run is not None:
         report = case.dry_run
@@ -141,6 +157,37 @@ def _feedback(case: IncidentCase) -> str:
             if not check.passed:
                 parts.append(f"verifier {check.name}: {check.detail}")
     return "\n".join(parts)
+
+
+def _feedback_v2(case: IncidentCase) -> str:
+    """One field per line. The previous kind is named so the retry does not repeat it blindly."""
+    kind = "none" if case.patch is None else case.patch.remediation_kind.value
+    lines = [
+        f"previous_kind: {kind}",
+        "submit_patch fields: remediation_kind, module_source, regression_test",
+    ]
+    if case.dry_run is not None:
+        report = case.dry_run
+        lines.append(
+            "dry_run: "
+            f"rows_changed_outside={report.rows_changed_outside} "
+            f"rows_fixed={report.rows_fixed} "
+            f"over_broad={report.over_broad} "
+            f"psi_after={report.psi_after or '-'}"
+        )
+    if case.verdicts:
+        latest = case.verdicts[-1]
+        lines.append(f"critic_approved: {str(latest.approved).lower()}")
+        if not latest.approved and not latest.critic_degraded:
+            for item in latest.objections:
+                lines.append(f"objection: {item.kind.value}: {item.message}")
+    if case.pre_critic_note:
+        lines.append(f"pre_critic: {case.pre_critic_note}")
+    if case.verification is not None and not case.verification.passed:
+        for check in case.verification.checks:
+            if not check.passed:
+                lines.append(f"verifier: {check.name}: {check.detail}")
+    return "\n".join(lines)
 
 
 def _loop(

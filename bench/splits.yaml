@@ -1,0 +1,49 @@
+# Frozen MERIDIAN-Bench splits. Dev and test seeds must not overlap.
+dev:
+  faults:
+    - SCHEMA_DRIFT
+    - NULL_EXPLOSION
+    - UNIT_MISMATCH
+    - DUPLICATE_KEYS
+    - LATE_PARTITION
+    - DISTRIBUTION_SHIFT
+  datasets:
+    - vehicle_telemetry
+  intensities:
+    - 0.1
+  seeds:
+    - 101
+test:
+  faults:
+    - SCHEMA_DRIFT
+    - NULL_EXPLOSION
+    - UNIT_MISMATCH
+    - DUPLICATE_KEYS
+    - LATE_PARTITION
+    - DISTRIBUTION_SHIFT
+  datasets:
+    - vehicle_telemetry
+    - trip_summary
+    - fleet_daily_kpi
+  intensities:
+    - 0.1
+    - 0.5
+  seeds:
+    - 201
+    - 202
+hard:
+  datasets:
+    - vehicle_telemetry
+    - trip_summary
+    - fleet_daily_kpi
+  seeds:
+    - 301
+    - 302
+    - 303
+    - 304
+    - 305
+    - 306
+    - 307
+    - 308
+    - 309
+    - 310

@@ -1,0 +1,361 @@
+{
+  "comparisons": [
+    {
+      "headline": {
+        "causal_event_correct": {
+          "N": 6,
+          "n": 6,
+          "text": "6/6"
+        },
+        "detection_recall": {
+          "N": 6,
+          "n": 6,
+          "text": "6/6"
+        },
+        "escalation": {
+          "N": 6,
+          "n": 2,
+          "text": "2/6"
+        },
+        "false_fix": {
+          "N": 4,
+          "n": 0,
+          "text": "0/4"
+        },
+        "hard_fp": {
+          "N": 0,
+          "incidents": 0,
+          "n": 0,
+          "text": "0/0"
+        },
+        "kind_appropriate": {
+          "N": 6,
+          "n": 3,
+          "text": "3/6"
+        },
+        "machine_time_p50": 241.808319,
+        "usd_per_run": 0.0,
+        "verified": {
+          "N": 6,
+          "n": 4,
+          "text": "4/6"
+        }
+      },
+      "label": "dev-fix-v1"
+    },
+    {
+      "headline": {
+        "causal_event_correct": {
+          "N": 6,
+          "n": 6,
+          "text": "6/6"
+        },
+        "detection_recall": {
+          "N": 6,
+          "n": 6,
+          "text": "6/6"
+        },
+        "escalation": {
+          "N": 6,
+          "n": 1,
+          "text": "1/6"
+        },
+        "false_fix": {
+          "N": 3,
+          "n": 0,
+          "text": "0/3"
+        },
+        "hard_fp": {
+          "N": 0,
+          "incidents": 0,
+          "n": 0,
+          "text": "0/0"
+        },
+        "kind_appropriate": {
+          "N": 6,
+          "n": 6,
+          "text": "6/6"
+        },
+        "machine_time_p50": 301.392669,
+        "usd_per_run": 0.0,
+        "verified": {
+          "N": 6,
+          "n": 3,
+          "text": "3/6"
+        }
+      },
+      "label": "dev-fix-v2"
+    }
+  ],
+  "critic": {
+    "corrective": {
+      "N": 59,
+      "n": 3,
+      "text": "3/59"
+    },
+    "degraded": {
+      "N": 59,
+      "n": 0,
+      "text": "0/59"
+    },
+    "good_means": "repaired_matches_clean from score_fix",
+    "matrix": {
+      "approved_bad": 14,
+      "approved_good": 38,
+      "rejected_bad": 6,
+      "rejected_good": 1
+    }
+  },
+  "detection_by_dataset": {
+    "fleet_daily_kpi": {
+      "N": 24,
+      "n": 24,
+      "text": "24/24"
+    },
+    "trip_summary": {
+      "N": 24,
+      "n": 24,
+      "text": "24/24"
+    },
+    "vehicle_telemetry": {
+      "N": 24,
+      "n": 24,
+      "text": "24/24"
+    }
+  },
+  "detection_by_fault": {
+    "DISTRIBUTION_SHIFT": {
+      "N": 12,
+      "n": 12,
+      "text": "12/12"
+    },
+    "DUPLICATE_KEYS": {
+      "N": 12,
+      "n": 12,
+      "text": "12/12"
+    },
+    "LATE_PARTITION": {
+      "N": 12,
+      "n": 12,
+      "text": "12/12"
+    },
+    "NULL_EXPLOSION": {
+      "N": 12,
+      "n": 12,
+      "text": "12/12"
+    },
+    "SCHEMA_DRIFT": {
+      "N": 12,
+      "n": 12,
+      "text": "12/12"
+    },
+    "UNIT_MISMATCH": {
+      "N": 12,
+      "n": 12,
+      "text": "12/12"
+    }
+  },
+  "detection_precision": {
+    "by_dataset": {
+      "fleet_daily_kpi": {
+        "N": 24,
+        "n": 24,
+        "text": "24/24"
+      },
+      "trip_summary": {
+        "N": 24,
+        "n": 24,
+        "text": "24/24"
+      },
+      "vehicle_telemetry": {
+        "N": 24,
+        "n": 24,
+        "text": "24/24"
+      }
+    },
+    "by_fault": {
+      "DISTRIBUTION_SHIFT": {
+        "N": 12,
+        "n": 12,
+        "text": "12/12"
+      },
+      "DUPLICATE_KEYS": {
+        "N": 12,
+        "n": 12,
+        "text": "12/12"
+      },
+      "LATE_PARTITION": {
+        "N": 12,
+        "n": 12,
+        "text": "12/12"
+      },
+      "NULL_EXPLOSION": {
+        "N": 12,
+        "n": 12,
+        "text": "12/12"
+      },
+      "SCHEMA_DRIFT": {
+        "N": 12,
+        "n": 12,
+        "text": "12/12"
+      },
+      "UNIT_MISMATCH": {
+        "N": 12,
+        "n": 12,
+        "text": "12/12"
+      }
+    }
+  },
+  "detection_recall": {
+    "N": 72,
+    "n": 72,
+    "text": "72/72"
+  },
+  "fix": {
+    "escalation": {
+      "N": 72,
+      "n": 15,
+      "text": "15/72"
+    },
+    "false_fix": {
+      "N": 27,
+      "n": 0,
+      "text": "0/27"
+    },
+    "kind_appropriate": {
+      "N": 70,
+      "n": 67,
+      "text": "67/70"
+    },
+    "repaired_matches_clean_among_verified": {
+      "N": 27,
+      "n": 27,
+      "text": "27/27"
+    },
+    "verified": {
+      "N": 72,
+      "n": 27,
+      "text": "27/72"
+    }
+  },
+  "forced_final": false,
+  "hard_fp": {
+    "N": 0,
+    "incidents": 0,
+    "n": 0,
+    "text": "0/0"
+  },
+  "meta": {
+    "commit": "637750d16f666ba371310e80204ba2c241836900",
+    "forced_final": false,
+    "models": {
+      "critic": "gemma4:12b",
+      "fix": "qwen3.5:27b-q4_K_M",
+      "root_cause": "qwen3.5:27b-q4_K_M",
+      "triage": "qwen3.5:27b-q4_K_M"
+    },
+    "ollama": "ollama version is 0.40.6",
+    "prompt_versions": {
+      "critic": "v1",
+      "fix": "v2",
+      "fix_default": "v1",
+      "root_cause": "v1",
+      "triage": "v1"
+    },
+    "seeds": [
+      201,
+      202
+    ],
+    "split": "test"
+  },
+  "ops": {
+    "machine_time_n": 72,
+    "machine_time_p50": 261.621484,
+    "machine_time_p95": 665.596556,
+    "node_latency_ms": {
+      "critic": {
+        "p50": 4996.0,
+        "p95": 10380.0
+      },
+      "fix": {
+        "p50": 7635.0,
+        "p95": 52148.0
+      },
+      "root_cause": {
+        "p50": 9199.0,
+        "p95": 37003.0
+      },
+      "triage": {
+        "p50": 22656.0,
+        "p95": 38217.0
+      }
+    },
+    "structured_success_rate": {
+      "critic": {
+        "N": 102,
+        "n": 98,
+        "text": "98/102"
+      },
+      "fix": {
+        "N": 143,
+        "n": 141,
+        "text": "141/143"
+      },
+      "root_cause": {
+        "N": 72,
+        "n": 72,
+        "text": "72/72"
+      },
+      "triage": {
+        "N": 72,
+        "n": 72,
+        "text": "72/72"
+      }
+    },
+    "timeouts": 0,
+    "tokens_per_run": 55694.73611111111,
+    "usd_per_run": 0.0,
+    "usd_total": 0.0,
+    "wall_aborts": {
+      "N": 72,
+      "n": 2,
+      "text": "2/72"
+    },
+    "wall_p50": 266.0083219580047,
+    "wall_p95": 673.0155979999981
+  },
+  "root_cause": {
+    "causal_event_correct": {
+      "N": 72,
+      "n": 72,
+      "text": "72/72"
+    },
+    "guardrail_false_negative": {
+      "N": 72,
+      "n": 0,
+      "text": "0/72"
+    },
+    "mean_columns_jaccard": 0.9444444444444444,
+    "mean_grounding_violations": 0.0,
+    "raw_causal_correct": {
+      "N": 72,
+      "n": 72,
+      "text": "72/72"
+    }
+  },
+  "runs": 72,
+  "triage": {
+    "distribution": {
+      "SEV1": 4,
+      "SEV2": 37,
+      "SEV3": 23,
+      "SEV4": 8
+    },
+    "floor_raise": {
+      "N": 72,
+      "n": 0,
+      "text": "0/72"
+    },
+    "note": "No ground-truth severity exists. This is not an accuracy."
+  }
+}

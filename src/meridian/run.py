@@ -45,6 +45,7 @@ from meridian.pipeline.generate import DEFAULT_PARTITION_DATE, generate_dataset
 from meridian.pipeline.parquet import write_parquet
 from meridian.quality.freshness import late_arrival, on_time_arrival
 from meridian.quality.reference import fit_reference_profile
+from meridian.slack.gate import ApprovalPorts
 from meridian.wall import WallClock, call_bounded
 
 logger = logging.getLogger("meridian.run")
@@ -483,6 +484,38 @@ def _percentile(values: list[int], rank: int) -> int:
     return ordered[min(index, len(ordered) - 1)]
 
 
+def _approval_setup(
+    evidence_root: Path,
+    settings: Settings,
+    *,
+    slack: bool,
+    bench: bool,
+) -> tuple[bool, ApprovalPorts | None]:
+    """Bench reaches the gate and does not post. Slack posts. Otherwise the graph ends."""
+    if bench:
+        return True, _bench_ports(evidence_root)
+    if slack:
+        from meridian.slack.runtime import ports_for
+
+        return True, ports_for(settings)
+    return False, None
+
+
+def _bench_ports(evidence_root: Path) -> ApprovalPorts:
+    """An in-memory gate. Nothing is applied and nothing is sent to Slack."""
+    from meridian.slack.gateway import RecordingGateway
+    from meridian.slack.store import MessageLog, OpenIndex
+
+    return ApprovalPorts(
+        gateway=RecordingGateway(MessageLog(evidence_root / "messages")),
+        apply_root=evidence_root / "applied",
+        postmortem_root=evidence_root / "postmortems",
+        channel="bench",
+        open_index=OpenIndex(evidence_root / "open.json"),
+        bench=True,
+    )
+
+
 def _invoke(
     settings: Settings,
     chats: PreparedChats,
@@ -490,6 +523,7 @@ def _invoke(
     evidence_root: Path,
     *,
     slack: bool = False,
+    bench: bool = False,
     clock: WallClock,
     run_id: UUID,
 ) -> MeridianState | None:
@@ -503,11 +537,7 @@ def _invoke(
             StdioSession(evidence_root) as session,
             SqliteSaver.from_conn_string(str(checkpoint)) as saver,
         ):
-            ports = None
-            if slack:
-                from meridian.slack.runtime import ports_for
-
-                ports = ports_for(settings)
+            approval, ports = _approval_setup(evidence_root, settings, slack=slack, bench=bench)
             graph = build_graph(
                 num_cpus=settings.ray_num_cpus,
                 model_name=chats.triage_model,
@@ -530,7 +560,7 @@ def _invoke(
                 sample_seed=settings.llm_seed,
                 wall_budget_s=settings.run_wall_budget_s,
                 psi_min_rows=settings.psi_min_rows,
-                approval=slack,
+                approval=approval,
                 approval_ports=ports,
                 wall_clock=clock,
             )

@@ -1,0 +1,109 @@
+{
+  "abort_reason": "",
+  "applied": false,
+  "cases": [
+    {
+      "causal_event_correct": true,
+      "columns_jaccard": 1.0,
+      "critic_approved": false,
+      "critic_corrective": true,
+      "critic_degraded": false,
+      "escalated": false,
+      "fault": "NULL_EXPLOSION",
+      "floor_raised": false,
+      "floor_severity": "SEV2",
+      "grounding_violations": 0,
+      "guardrail_fn": false,
+      "has_hypothesis": true,
+      "has_verdict": true,
+      "kind": "QUARANTINE",
+      "kind_appropriate": true,
+      "llm_severity": "SEV2",
+      "raw_causal_correct": true,
+      "repaired_matches_clean": true,
+      "severity": "SEV2",
+      "verified": false
+    }
+  ],
+  "completed": true,
+  "dataset": "vehicle_telemetry",
+  "decision": "BENCH_NO_HUMAN",
+  "fault": "NULL_EXPLOSION",
+  "incidents": [
+    {
+      "fault": "NULL_EXPLOSION",
+      "id": "6a8b0271-1592-5869-a708-7d182fb40267"
+    }
+  ],
+  "input_tokens": 121866,
+  "intensity": 0.1,
+  "machine_time_s": 391.788277,
+  "node_latency_ms": {
+    "critic": [
+      9109,
+      2248,
+      10685,
+      4651
+    ],
+    "fix": [
+      20694,
+      5302,
+      5854,
+      17630,
+      5550,
+      28738,
+      25600,
+      6601,
+      7279,
+      7970,
+      8551,
+      8888,
+      9287,
+      10220,
+      35648,
+      22057,
+      6917,
+      7474,
+      8199,
+      8736,
+      9295,
+      9843,
+      10591,
+      13162
+    ],
+    "root_cause": [
+      19409,
+      4907,
+      16154
+    ],
+    "triage": [
+      24121
+    ]
+  },
+  "output_tokens": 4282,
+  "run_key": "vehicle_telemetry__NULL_EXPLOSION__i0.1__s201",
+  "seed": 201,
+  "split": "test",
+  "structured": {
+    "critic": {
+      "n": 4,
+      "ok": 3
+    },
+    "fix": {
+      "n": 3,
+      "ok": 3
+    },
+    "root_cause": {
+      "n": 1,
+      "ok": 1
+    },
+    "triage": {
+      "n": 1,
+      "ok": 1
+    }
+  },
+  "timeouts": 0,
+  "usd": 0.0,
+  "wall_abort": false,
+  "wall_s": 395.1590581249984
+}

@@ -1,0 +1,144 @@
+{
+  "critic": {
+    "corrective": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "degraded": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "good_means": "repaired_matches_clean from score_fix",
+    "matrix": {
+      "approved_bad": 0,
+      "approved_good": 0,
+      "rejected_bad": 0,
+      "rejected_good": 0
+    }
+  },
+  "detection_by_dataset": {},
+  "detection_by_fault": {},
+  "detection_precision": {
+    "by_dataset": {},
+    "by_fault": {}
+  },
+  "detection_recall": {
+    "N": 0,
+    "n": 0,
+    "text": "0/0"
+  },
+  "fix": {
+    "escalation": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "false_fix": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "kind_appropriate": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "repaired_matches_clean_among_verified": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "verified": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    }
+  },
+  "forced_final": false,
+  "hard_fp": {
+    "N": 30,
+    "incidents": 0,
+    "n": 0,
+    "text": "0/30"
+  },
+  "meta": {
+    "commit": "637750d16f666ba371310e80204ba2c241836900",
+    "forced_final": false,
+    "models": {
+      "critic": "gemma4:12b",
+      "fix": "qwen3.5:27b-q4_K_M",
+      "root_cause": "qwen3.5:27b-q4_K_M",
+      "triage": "qwen3.5:27b-q4_K_M"
+    },
+    "ollama": "ollama version is 0.40.6",
+    "prompt_versions": {
+      "critic": "v1",
+      "fix": "v1",
+      "fix_default": "v1",
+      "root_cause": "v1",
+      "triage": "v1"
+    },
+    "seeds": [
+      301,
+      302,
+      303,
+      304,
+      305,
+      306,
+      307,
+      308,
+      309,
+      310
+    ],
+    "split": "hard"
+  },
+  "ops": {
+    "machine_time_n": 0,
+    "machine_time_p50": null,
+    "machine_time_p95": null,
+    "node_latency_ms": {},
+    "structured_success_rate": {},
+    "timeouts": 0,
+    "tokens_per_run": 0.0,
+    "usd_per_run": 0.0,
+    "usd_total": 0.0,
+    "wall_aborts": {
+      "N": 30,
+      "n": 0,
+      "text": "0/30"
+    },
+    "wall_p50": 8.72546012499879,
+    "wall_p95": 9.062527540998417
+  },
+  "root_cause": {
+    "causal_event_correct": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "guardrail_false_negative": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "mean_columns_jaccard": null,
+    "mean_grounding_violations": null,
+    "raw_causal_correct": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    }
+  },
+  "runs": 30,
+  "triage": {
+    "distribution": {},
+    "floor_raise": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "note": "No ground-truth severity exists. This is not an accuracy."
+  }
+}

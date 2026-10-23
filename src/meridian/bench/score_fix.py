@@ -103,11 +103,17 @@ def _kept_clean(clean: pd.DataFrame, corrupted: pd.DataFrame) -> pd.DataFrame:
 
 
 def _changed_rows(clean: pd.DataFrame, corrupted: pd.DataFrame) -> pd.Series:
+    """Row flags on ``clean``. Appended injector rows are not a position in ``clean``."""
     flags = pd.Series(False, index=clean.index)
-    shared = [column for column in clean.columns if column in corrupted.columns]
+    shared_len = min(len(clean), len(corrupted))
+    if len(corrupted) < len(clean):
+        flags.iloc[shared_len:] = True
+    left_frame = clean.iloc[:shared_len]
+    right_frame = corrupted.iloc[:shared_len]
+    shared = [column for column in left_frame.columns if column in right_frame.columns]
     for column in shared:
-        left = clean[column]
-        right = corrupted[column]
+        left = left_frame[column]
+        right = right_frame[column]
         if pd.api.types.is_numeric_dtype(left) and pd.api.types.is_numeric_dtype(right):
             differ = ~np.isclose(
                 left.to_numpy(dtype=float),
@@ -118,7 +124,7 @@ def _changed_rows(clean: pd.DataFrame, corrupted: pd.DataFrame) -> pd.Series:
             )
         else:
             differ = left.astype(str).to_numpy() != right.astype(str).to_numpy()
-        flags = flags | pd.Series(differ, index=clean.index)
+        flags.iloc[:shared_len] = flags.iloc[:shared_len].to_numpy() | differ
     if list(clean.columns) != list(corrupted.columns):
         flags[:] = True
     return flags

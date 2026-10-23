@@ -1,0 +1,250 @@
+{
+  "critic": {
+    "corrective": {
+      "N": 4,
+      "n": 1,
+      "text": "1/4"
+    },
+    "degraded": {
+      "N": 4,
+      "n": 0,
+      "text": "0/4"
+    },
+    "good_means": "repaired_matches_clean from score_fix",
+    "matrix": {
+      "approved_bad": 1,
+      "approved_good": 3,
+      "rejected_bad": 0,
+      "rejected_good": 0
+    }
+  },
+  "detection_by_dataset": {
+    "vehicle_telemetry": {
+      "N": 6,
+      "n": 6,
+      "text": "6/6"
+    }
+  },
+  "detection_by_fault": {
+    "DISTRIBUTION_SHIFT": {
+      "N": 1,
+      "n": 1,
+      "text": "1/1"
+    },
+    "DUPLICATE_KEYS": {
+      "N": 1,
+      "n": 1,
+      "text": "1/1"
+    },
+    "LATE_PARTITION": {
+      "N": 1,
+      "n": 1,
+      "text": "1/1"
+    },
+    "NULL_EXPLOSION": {
+      "N": 1,
+      "n": 1,
+      "text": "1/1"
+    },
+    "SCHEMA_DRIFT": {
+      "N": 1,
+      "n": 1,
+      "text": "1/1"
+    },
+    "UNIT_MISMATCH": {
+      "N": 1,
+      "n": 1,
+      "text": "1/1"
+    }
+  },
+  "detection_precision": {
+    "by_dataset": {
+      "vehicle_telemetry": {
+        "N": 6,
+        "n": 6,
+        "text": "6/6"
+      }
+    },
+    "by_fault": {
+      "DISTRIBUTION_SHIFT": {
+        "N": 1,
+        "n": 1,
+        "text": "1/1"
+      },
+      "DUPLICATE_KEYS": {
+        "N": 1,
+        "n": 1,
+        "text": "1/1"
+      },
+      "LATE_PARTITION": {
+        "N": 1,
+        "n": 1,
+        "text": "1/1"
+      },
+      "NULL_EXPLOSION": {
+        "N": 1,
+        "n": 1,
+        "text": "1/1"
+      },
+      "SCHEMA_DRIFT": {
+        "N": 1,
+        "n": 1,
+        "text": "1/1"
+      },
+      "UNIT_MISMATCH": {
+        "N": 1,
+        "n": 1,
+        "text": "1/1"
+      }
+    }
+  },
+  "detection_recall": {
+    "N": 6,
+    "n": 6,
+    "text": "6/6"
+  },
+  "fix": {
+    "escalation": {
+      "N": 6,
+      "n": 1,
+      "text": "1/6"
+    },
+    "false_fix": {
+      "N": 3,
+      "n": 0,
+      "text": "0/3"
+    },
+    "kind_appropriate": {
+      "N": 6,
+      "n": 6,
+      "text": "6/6"
+    },
+    "repaired_matches_clean_among_verified": {
+      "N": 3,
+      "n": 3,
+      "text": "3/3"
+    },
+    "verified": {
+      "N": 6,
+      "n": 3,
+      "text": "3/6"
+    }
+  },
+  "forced_final": false,
+  "hard_fp": {
+    "N": 0,
+    "incidents": 0,
+    "n": 0,
+    "text": "0/0"
+  },
+  "meta": {
+    "commit": "637750d16f666ba371310e80204ba2c241836900",
+    "forced_final": false,
+    "models": {
+      "critic": "gemma4:12b",
+      "fix": "qwen3.5:27b-q4_K_M",
+      "root_cause": "qwen3.5:27b-q4_K_M",
+      "triage": "qwen3.5:27b-q4_K_M"
+    },
+    "ollama": "ollama version is 0.40.6",
+    "prompt_versions": {
+      "critic": "v1",
+      "fix": "v2",
+      "fix_default": "v1",
+      "root_cause": "v1",
+      "triage": "v1"
+    },
+    "seeds": [
+      101
+    ],
+    "split": "dev"
+  },
+  "ops": {
+    "machine_time_n": 6,
+    "machine_time_p50": 301.392669,
+    "machine_time_p95": 412.32216,
+    "node_latency_ms": {
+      "critic": {
+        "p50": 3495.0,
+        "p95": 10041.0
+      },
+      "fix": {
+        "p50": 11265.0,
+        "p95": 86718.0
+      },
+      "root_cause": {
+        "p50": 10262.0,
+        "p95": 27987.0
+      },
+      "triage": {
+        "p50": 36038.0,
+        "p95": 38441.0
+      }
+    },
+    "structured_success_rate": {
+      "critic": {
+        "N": 6,
+        "n": 5,
+        "text": "5/6"
+      },
+      "fix": {
+        "N": 11,
+        "n": 11,
+        "text": "11/11"
+      },
+      "root_cause": {
+        "N": 6,
+        "n": 6,
+        "text": "6/6"
+      },
+      "triage": {
+        "N": 6,
+        "n": 6,
+        "text": "6/6"
+      }
+    },
+    "timeouts": 0,
+    "tokens_per_run": 47637.0,
+    "usd_per_run": 0.0,
+    "usd_total": 0.0,
+    "wall_aborts": {
+      "N": 6,
+      "n": 0,
+      "text": "0/6"
+    },
+    "wall_p50": 308.9119812909994,
+    "wall_p95": 416.26300854099827
+  },
+  "root_cause": {
+    "causal_event_correct": {
+      "N": 6,
+      "n": 6,
+      "text": "6/6"
+    },
+    "guardrail_false_negative": {
+      "N": 6,
+      "n": 0,
+      "text": "0/6"
+    },
+    "mean_columns_jaccard": 0.9166666666666666,
+    "mean_grounding_violations": 0.0,
+    "raw_causal_correct": {
+      "N": 6,
+      "n": 6,
+      "text": "6/6"
+    }
+  },
+  "runs": 6,
+  "triage": {
+    "distribution": {
+      "SEV1": 1,
+      "SEV2": 5
+    },
+    "floor_raise": {
+      "N": 6,
+      "n": 0,
+      "text": "0/6"
+    },
+    "note": "No ground-truth severity exists. This is not an accuracy."
+  }
+}

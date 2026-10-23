@@ -1,0 +1,83 @@
+{
+  "abort_reason": "",
+  "applied": false,
+  "cases": [
+    {
+      "causal_event_correct": true,
+      "columns_jaccard": 1.0,
+      "critic_approved": true,
+      "critic_corrective": false,
+      "critic_degraded": false,
+      "escalated": false,
+      "fault": "LATE_PARTITION",
+      "floor_raised": false,
+      "floor_severity": "SEV3",
+      "grounding_violations": 0,
+      "guardrail_fn": false,
+      "has_hypothesis": true,
+      "has_verdict": true,
+      "kind": "RERUN_UPSTREAM",
+      "kind_appropriate": true,
+      "llm_severity": "SEV3",
+      "raw_causal_correct": true,
+      "repaired_matches_clean": true,
+      "severity": "SEV3",
+      "verified": true
+    }
+  ],
+  "completed": true,
+  "dataset": "trip_summary",
+  "decision": "BENCH_NO_HUMAN",
+  "fault": "LATE_PARTITION",
+  "incidents": [
+    {
+      "fault": "LATE_PARTITION",
+      "id": "fffa5178-6948-5f89-b5c2-199a7b0e9c26"
+    }
+  ],
+  "input_tokens": 9028,
+  "intensity": 0.1,
+  "machine_time_s": 132.786845,
+  "node_latency_ms": {
+    "critic": [
+      4134
+    ],
+    "fix": [
+      66582
+    ],
+    "root_cause": [
+      5601,
+      10123,
+      24118
+    ],
+    "triage": [
+      20418
+    ]
+  },
+  "output_tokens": 1189,
+  "run_key": "trip_summary__LATE_PARTITION__i0.1__s201",
+  "seed": 201,
+  "split": "test",
+  "structured": {
+    "critic": {
+      "n": 1,
+      "ok": 1
+    },
+    "fix": {
+      "n": 1,
+      "ok": 1
+    },
+    "root_cause": {
+      "n": 1,
+      "ok": 1
+    },
+    "triage": {
+      "n": 1,
+      "ok": 1
+    }
+  },
+  "timeouts": 0,
+  "usd": 0.0,
+  "wall_abort": false,
+  "wall_s": 140.00269179099996
+}

@@ -140,6 +140,18 @@ def test_rejected_source_does_not_match() -> None:
     assert _frames_match(left, pd.DataFrame({"other": [1]})) is False
 
 
+def test_appended_duplicate_rows_do_not_crash_the_comparison() -> None:
+    from meridian.bench.score_fix import _changed_rows
+
+    clean = pd.DataFrame({"vehicle_id": ["a", "b"], "speed_mps": [1.0, 2.0]})
+    appended = pd.concat([clean, clean.iloc[[0]]], ignore_index=True)
+    flags = _changed_rows(clean, appended)
+    assert list(flags) == [False, False]
+    shorter = clean.iloc[:1]
+    trimmed = _changed_rows(clean, shorter)
+    assert list(trimmed) == [False, True]
+
+
 def test_missing_patch_is_not_appropriate() -> None:
     from datetime import UTC, datetime
 
