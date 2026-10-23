@@ -1,0 +1,60 @@
+{
+  "additionalProperties": false,
+  "description": "A node start or end, written when it happens.",
+  "properties": {
+    "attempt": {
+      "description": "Attempt number for this node.",
+      "minimum": 1,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "case_id": {
+      "description": "Incident id, or '-' when the node has no single case.",
+      "title": "Case Id",
+      "type": "string"
+    },
+    "elapsed_s": {
+      "description": "Seconds since the process clock started.",
+      "minimum": 0.0,
+      "title": "Elapsed S",
+      "type": "number"
+    },
+    "node": {
+      "description": "Graph node name.",
+      "title": "Node",
+      "type": "string"
+    },
+    "occurred_at": {
+      "description": "UTC wall time of this boundary.",
+      "format": "date-time",
+      "title": "Occurred At",
+      "type": "string"
+    },
+    "phase": {
+      "description": "Whether the node is starting or finishing.",
+      "enum": [
+        "start",
+        "end"
+      ],
+      "title": "Phase",
+      "type": "string"
+    },
+    "run_id": {
+      "description": "Run that executed the node.",
+      "format": "uuid",
+      "title": "Run Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "occurred_at",
+    "run_id",
+    "case_id",
+    "node",
+    "attempt",
+    "phase",
+    "elapsed_s"
+  ],
+  "title": "ProgressEvent",
+  "type": "object"
+}

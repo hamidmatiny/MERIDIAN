@@ -29,14 +29,34 @@ class Postmortem(MeridianModel):
     fix_summary: NonBlank = Field(description="What the approved fix changed.")
     time_to_resolution_s: int = Field(
         ge=0,
-        description="Whole seconds from detection to approval or escalation.",
+        description="machine_time_s + human_wait_s. Zero when those were not recorded.",
+    )
+    machine_time_s: int | None = Field(
+        default=None,
+        ge=0,
+        description="Detection until slack_approval was reached. None if not recorded.",
+    )
+    human_wait_s: int | None = Field(
+        default=None,
+        ge=0,
+        description="Message posted until the decision. None if not recorded.",
     )
     cost_usd: FiniteFloat = Field(ge=0.0, description="Recorded cost in US dollars.")
 
     @model_validator(mode="after")
     def timeline_is_ordered(self) -> Self:
-        """Keep the timeline chronological, allowing equal timestamps."""
+        """Keep the timeline chronological, and the two waits additive."""
         times = [event.occurred_at for event in self.timeline]
         if times != sorted(times):
             raise ValueError("timeline must be ordered by occurred_at")
+        machine = self.machine_time_s
+        human = self.human_wait_s
+        if (machine is None) != (human is None):
+            raise ValueError("machine_time_s and human_wait_s are recorded together")
+        if (
+            machine is not None
+            and human is not None
+            and self.time_to_resolution_s != machine + human
+        ):
+            raise ValueError("time_to_resolution_s must equal machine_time_s + human_wait_s")
         return self

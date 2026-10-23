@@ -34,6 +34,7 @@ from meridian.contracts import (
     ObjectionKind,
     PartitionDescription,
     PartitionMetadata,
+    ProgressEvent,
     ReferenceComparison,
     ReferenceProfile,
     ToolCall,
@@ -171,6 +172,15 @@ def test_round_trip_covers_every_contract_model() -> None:
         "ApprovalDecision": make_approval(patch_id=patch.id),
         "TimelineEvent": make_postmortem(incident_id=incident.id).timeline[0],
         "Postmortem": make_postmortem(incident_id=incident.id),
+        "ProgressEvent": ProgressEvent(
+            occurred_at=datetime(2026, 10, 22, 12, 0, tzinfo=UTC),
+            run_id=UUID("33333333-3333-4333-8333-333333333333"),
+            case_id=str(incident.id),
+            node="triage",
+            attempt=1,
+            phase="start",
+            elapsed_s=1.5,
+        ),
         "IncidentCase": IncidentCase(
             incident=incident,
             hypothesis=hypothesis,

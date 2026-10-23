@@ -44,11 +44,39 @@
       "title": "Fix Summary",
       "type": "string"
     },
+    "human_wait_s": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Message posted until the decision. None if not recorded.",
+      "title": "Human Wait S"
+    },
     "incident_id": {
       "description": "Incident this report describes.",
       "format": "uuid",
       "title": "Incident Id",
       "type": "string"
+    },
+    "machine_time_s": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Detection until slack_approval was reached. None if not recorded.",
+      "title": "Machine Time S"
     },
     "root_cause": {
       "description": "Accepted root cause.",
@@ -56,7 +84,7 @@
       "type": "string"
     },
     "time_to_resolution_s": {
-      "description": "Whole seconds from detection to approval or escalation.",
+      "description": "machine_time_s + human_wait_s. Zero when those were not recorded.",
       "minimum": 0,
       "title": "Time To Resolution S",
       "type": "integer"

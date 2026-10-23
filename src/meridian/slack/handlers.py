@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from meridian.contracts.approval import ApprovalOutcome
+from meridian.slack.audit import AuditLog
 from meridian.slack.blocks import reject_modal
 from meridian.slack.store import DecisionLog, OpenCase
 from meridian.slack.text import mention_command, reply_text
@@ -22,10 +23,16 @@ def on_mention(
     bot_user_id: str,
     cases: list[OpenCase],
     now: datetime,
+    audit: AuditLog | None = None,
 ) -> None:
     """Reply in the mention's thread. The command is parsed from the bot id."""
-    command = mention_command(str(event.get("text", "")), bot_user_id)
-    say(text=reply_text(command, cases, now), thread_ts=event.get("ts"))
+    text = str(event.get("text", ""))
+    user = str(event.get("user", ""))
+    _audit(audit, "mention_received", text=text, user=user)
+    command = mention_command(text, bot_user_id)
+    reply = reply_text(command, cases, now)
+    _audit(audit, "reply_sent", text=reply)
+    say(text=reply, thread_ts=event.get("ts"))
 
 
 def on_action(
@@ -39,13 +46,17 @@ def on_action(
     now: datetime,
     channel: str,
     message_ts: str,
+    audit: AuditLog | None = None,
 ) -> str | dict[str, object]:
     """Approve, acknowledge, or open the reject modal.
 
     A string return is an ephemeral note. A dict is the reject modal.
     An empty string means the graph was resumed.
     """
+    patch_id = _patch_id(value)
+    _audit(audit, "action_received", action=action_id, user=user_id, patch_id=patch_id)
     if user_id not in approvers:
+        _audit(audit, "unauthorized_rejected", action=action_id, user=user_id, patch_id=patch_id)
         return NOT_AUTHORIZED
     payload = _value(value)
     if action_id == "meridian_reject":
@@ -57,10 +68,19 @@ def on_action(
         )
     decision = _kind(action_id)
     if decision is None:
+        _audit(audit, "unauthorized_rejected", action=action_id, user=user_id, patch_id=patch_id)
         return NOT_AUTHORIZED
     if not log.claim(payload["patch_id"]):
+        _audit(
+            audit,
+            "duplicate_rejected",
+            action=action_id,
+            user=user_id,
+            patch_id=payload["patch_id"],
+        )
         return ALREADY_DECIDED
     resume(payload["thread_id"], _body(payload["patch_id"], decision, user_id, now, ""))
+    _audit(audit, "decision_recorded", action=decision, user=user_id, patch_id=payload["patch_id"])
     return ""
 
 
@@ -73,9 +93,11 @@ def on_reject_submit(
     log: DecisionLog,
     resume: Callable[[str, dict[str, object]], None],
     now: datetime,
+    audit: AuditLog | None = None,
 ) -> str:
     """Resume with REJECTED when the comment is present and the user is allowed."""
     if user_id not in approvers:
+        _audit(audit, "unauthorized_rejected", action="meridian_reject", user=user_id, patch_id="")
         return NOT_AUTHORIZED
     if not comment.strip():
         return COMMENT_REQUIRED
@@ -84,11 +106,26 @@ def on_reject_submit(
         return COMMENT_REQUIRED
     patch_id = str(payload["patch_id"])
     thread_id = str(payload["thread_id"])
+    _audit(audit, "action_received", action="meridian_reject", user=user_id, patch_id=patch_id)
     if not log.claim(patch_id):
+        _audit(
+            audit,
+            "duplicate_rejected",
+            action="meridian_reject",
+            user=user_id,
+            patch_id=patch_id,
+        )
         return ALREADY_DECIDED
     resume(
         thread_id,
         _body(patch_id, ApprovalOutcome.REJECTED.value, user_id, now, comment.strip()),
+    )
+    _audit(
+        audit,
+        "decision_recorded",
+        action=ApprovalOutcome.REJECTED.value,
+        user=user_id,
+        patch_id=patch_id,
     )
     return ""
 
@@ -115,6 +152,18 @@ def expire_cases(
         )
         resumed += 1
     return resumed
+
+
+def _audit(audit: AuditLog | None, event: str, **fields: object) -> None:
+    if audit is not None:
+        audit.write(event, **fields)
+
+
+def _patch_id(raw: str) -> str:
+    try:
+        return _value(raw).get("patch_id", "")
+    except (ValueError, KeyError):
+        return ""
 
 
 def _value(raw: str) -> dict[str, str]:

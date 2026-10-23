@@ -118,6 +118,7 @@ def serve(settings: Settings, identity: SlackIdentity) -> int:
             cases=ports.open_index.cases,
             resume=resume,
             timeout_s=settings.approval_timeout_s,
+            audit=ports.audit,
         )
 
         def watch() -> None:
@@ -159,6 +160,7 @@ def register(
     cases: Callable[[], list[Any]],
     resume: Callable[[str, dict[str, object]], None],
     timeout_s: int,
+    audit: Any | None = None,
 ) -> None:
     """Attach mention, button, and modal handlers. ``timeout_s`` is logged."""
     logger.info("approval_timeout_s=%s", timeout_s)
@@ -170,15 +172,16 @@ def register(
             bot_user_id=bot_user_id,
             cases=list(cases()),
             now=datetime.now(UTC),
+            audit=audit,
         )
 
     def action(ack: Callable[..., None], body: dict[str, Any], client: Any) -> None:
         ack()
-        note = _action(body, approvers=approvers, decisions=decisions, resume=resume)
+        note = _action(body, approvers=approvers, decisions=decisions, resume=resume, audit=audit)
         _ephemeral_or_modal(body, client, note)
 
     def rejected(ack: Callable[..., None], body: dict[str, Any], client: Any) -> None:
-        note = _rejected(body, approvers=approvers, decisions=decisions, resume=resume)
+        note = _rejected(body, approvers=approvers, decisions=decisions, resume=resume, audit=audit)
         if note == COMMENT_REQUIRED:
             ack(response_action="errors", errors={"comment": "A comment is required."})
             return
@@ -227,6 +230,7 @@ def _action(
     approvers: frozenset[str],
     decisions: DecisionLog,
     resume: Callable[[str, dict[str, object]], None],
+    audit: Any | None = None,
 ) -> str | dict[str, object]:
     from meridian.slack.handlers import on_action
 
@@ -245,6 +249,7 @@ def _action(
         now=datetime.now(UTC),
         channel=channel,
         message_ts=str(message.get("ts", "")),
+        audit=audit,
     )
 
 
@@ -254,6 +259,7 @@ def _rejected(
     approvers: frozenset[str],
     decisions: DecisionLog,
     resume: Callable[[str, dict[str, object]], None],
+    audit: Any | None = None,
 ) -> str:
     view = body.get("view", {})
     state = view.get("state", {}).get("values", {})
@@ -268,6 +274,7 @@ def _rejected(
         log=decisions,
         resume=resume,
         now=datetime.now(UTC),
+        audit=audit,
     )
 
 

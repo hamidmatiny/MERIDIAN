@@ -39,6 +39,13 @@ def format_status(cases: list[OpenCase], now: datetime) -> str:
     return "\n".join(lines)
 
 
+def mention_user(user_id: str) -> str:
+    """Render a Slack user id as a mention. Anything else is left unchanged."""
+    if len(user_id) > 1 and user_id[0] in {"U", "W"} and user_id[1:].isalnum():
+        return f"<@{user_id}>"
+    return user_id
+
+
 def reply_text(command: str, cases: list[OpenCase], now: datetime) -> str:
     """The thread reply for one mention command."""
     if command == "status":

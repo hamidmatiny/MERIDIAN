@@ -6,6 +6,7 @@ from typing import Any
 from slack_sdk import WebClient
 
 from meridian.config import Settings
+from meridian.slack.audit import AuditLog
 from meridian.slack.gate import ApprovalPorts
 from meridian.slack.gateway import LiveGateway
 from meridian.slack.store import MessageLog, OpenIndex
@@ -25,4 +26,5 @@ def ports_for(settings: Settings, *, client: Any | None = None) -> ApprovalPorts
         postmortem_root=Path("docs/postmortems"),
         channel=channel,
         open_index=OpenIndex(data / "slack-open.json"),
+        audit=AuditLog(data / "audit" / "slack.jsonl"),
     )

@@ -14,6 +14,7 @@ from meridian.contracts.partition_metadata import PartitionMetadata
 from meridian.contracts.partition_ref import PartitionRef
 from meridian.contracts.patch import Patch
 from meridian.contracts.postmortem import Postmortem, TimelineEvent
+from meridian.contracts.progress_event import ProgressEvent
 from meridian.contracts.reference_profile import ColumnProfile, ReferenceProfile
 from meridian.contracts.remediation import (
     Objection,
@@ -71,6 +72,7 @@ __all__ = [
     "PartitionRef",
     "Patch",
     "Postmortem",
+    "ProgressEvent",
     "ReferenceComparison",
     "ReferenceProfile",
     "RemediationKind",

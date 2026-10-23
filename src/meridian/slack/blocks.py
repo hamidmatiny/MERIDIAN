@@ -1,10 +1,12 @@
 """Block Kit for the approval gate. Snapshots in the tests pin this JSON."""
 
 import json
+import re
 from dataclasses import dataclass
 
 from meridian.contracts.approval import ApprovalDecision
 from meridian.contracts.incident_case import IncidentCase, attempt_history
+from meridian.slack.text import mention_user
 
 
 @dataclass(frozen=True)
@@ -140,7 +142,7 @@ def decided_blocks(view: ApprovalView, decision: ApprovalDecision) -> list[dict[
     comment = f" comment={decision.comment}" if decision.comment else ""
     blocks.append(
         _section(
-            f"decision={decision.decision.value} approver={decision.approver} "
+            f"decision={decision.decision.value} approver={mention_user(decision.approver)} "
             f"at={decision.decided_at.isoformat()}{comment}"
         )
     )
@@ -228,8 +230,13 @@ def _section(text: str) -> dict[str, object]:
     return {"type": "section", "text": {"type": "mrkdwn", "text": _escape(text)}}
 
 
+_MENTION = re.compile(r"&lt;@([UW][A-Z0-9]+)&gt;")
+
+
 def _escape(text: str) -> str:
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    """Escape mrkdwn, then put user mentions back so Slack renders them."""
+    escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return _MENTION.sub(r"<@\1>", escaped)
 
 
 def _button(

@@ -1,14 +1,21 @@
-"""Deterministic postmortem. No model call."""
+"""Deterministic postmortem. No model call.
 
-from datetime import timedelta
+Node times come from recorded progress events. A run that has none is marked
+``times not recorded (pre-5.2 run)`` instead of being given synthetic offsets.
+"""
+
+from datetime import datetime
 from decimal import Decimal
 
-from meridian.contracts.incident_case import IncidentCase, attempt_history
+from meridian.contracts.incident_case import IncidentCase
 from meridian.contracts.llm_call import LLMCall
 from meridian.contracts.postmortem import Postmortem, TimelineEvent
+from meridian.contracts.progress_event import ProgressEvent
 from meridian.llm.prices import cost_usd, load_prices
+from meridian.slack.text import mention_user
 
 _PAID = frozenset({"anthropic", "xai"})
+TIMES_NOT_RECORDED = "times not recorded (pre-5.2 run)"
 
 
 def ledger_usd(calls: list[LLMCall]) -> float:
@@ -25,7 +32,13 @@ def ledger_usd(calls: list[LLMCall]) -> float:
     return float(total)
 
 
-def build_postmortem(case: IncidentCase, calls: list[LLMCall]) -> Postmortem:
+def build_postmortem(
+    case: IncidentCase,
+    calls: list[LLMCall],
+    *,
+    events: list[ProgressEvent] | None = None,
+    posted_at: datetime | None = None,
+) -> Postmortem:
     """The contract record. Tokens stay in the markdown."""
     cause = (
         case.hypothesis.root_cause_summary
@@ -40,57 +53,62 @@ def build_postmortem(case: IncidentCase, calls: list[LLMCall]) -> Postmortem:
         summary = case.patch.remediation_kind.value
     else:
         summary = "No patch was produced."
-    if case.approval is None:
-        elapsed = 0
-    else:
-        delta = case.approval.decided_at - case.incident.detected_at
-        elapsed = max(int(delta.total_seconds()), 0)
+    matched = _for_case(case, [] if events is None else events)
+    machine, human = _waits(case, matched, posted_at)
+    elapsed = 0 if machine is None or human is None else machine + human
     return Postmortem(
         incident_id=case.incident.id,
-        timeline=build_timeline(case),
+        timeline=build_timeline(case, matched),
         root_cause=cause,
         fix_summary=summary,
         time_to_resolution_s=elapsed,
+        machine_time_s=machine,
+        human_wait_s=human,
         cost_usd=ledger_usd(calls),
     )
 
 
-def build_timeline(case: IncidentCase) -> list[TimelineEvent]:
-    """detected, triaged, hypothesis, each attempt, then the decision."""
-    base = case.incident.detected_at
-    rows: list[tuple[str, str]] = [
-        ("sentinel", f"detected {case.incident.fault_type.value} on {case.incident.dataset}"),
+def build_timeline(case: IncidentCase, events: list[ProgressEvent]) -> list[TimelineEvent]:
+    """One row per recorded node boundary, then the decision at its real time."""
+    if not events:
+        rows = [
+            TimelineEvent(
+                occurred_at=case.incident.detected_at,
+                actor="system",
+                summary=TIMES_NOT_RECORDED,
+            )
+        ]
+        decision = _decision_event(case)
+        if decision is not None:
+            rows.append(decision)
+        return sorted(rows, key=lambda item: item.occurred_at)
+    rows = [
+        TimelineEvent(
+            occurred_at=event.occurred_at,
+            actor=event.node,
+            summary=f"attempt {event.attempt} {event.phase}",
+        )
+        for event in events
     ]
-    if case.triage is not None:
-        rows.append(("triage", f"severity {case.triage.final_severity.value}"))
-    if case.hypothesis is not None:
-        rows.append(("root_cause", case.hypothesis.root_cause_summary))
-    for index, attempt in enumerate(attempt_history(case), start=1):
-        rows.append(("fix", f"attempt {index} {attempt.patch.remediation_kind.value}"))
-    if case.approval is not None:
-        text = f"{case.approval.decision.value} by {case.approval.approver}"
-        if case.approval.comment:
-            text = f"{text}: {case.approval.comment}"
-        rows.append(("human", text))
-    events: list[TimelineEvent] = []
-    for offset, (actor, summary) in enumerate(rows):
-        moment = base + timedelta(seconds=offset)
-        if actor == "human" and case.approval is not None and case.approval.decided_at >= moment:
-            moment = case.approval.decided_at
-        events.append(TimelineEvent(occurred_at=moment, actor=actor, summary=summary))
-    return events
+    decision = _decision_event(case)
+    if decision is not None:
+        rows.append(decision)
+    return sorted(rows, key=lambda item: item.occurred_at)
 
 
 def render_markdown(case: IncidentCase, report: Postmortem, calls: list[LLMCall]) -> str:
     """The file posted to the thread and written under docs/postmortems."""
     incoming = sum(call.input_tokens for call in calls)
     outgoing = sum(call.output_tokens for call in calls)
+    recorded = report.machine_time_s is not None
     lines = [
         f"# Postmortem {case.incident.id}",
         "",
         f"- Root cause: {report.root_cause}",
         f"- Fix: {report.fix_summary}",
-        f"- Time to resolution (s): {report.time_to_resolution_s}",
+        f"- Machine time (s): {_shown(report.machine_time_s)}",
+        f"- Human wait (s): {_shown(report.human_wait_s)}",
+        f"- Time to resolution (s): {_shown(report.time_to_resolution_s if recorded else None)}",
         f"- Tokens: input {incoming} output {outgoing}",
         f"- USD: {report.cost_usd:.2f} (budget ledger)",
         "",
@@ -101,3 +119,39 @@ def render_markdown(case: IncidentCase, report: Postmortem, calls: list[LLMCall]
         lines.append(f"- {event.occurred_at.isoformat()} {event.actor}: {event.summary}")
     lines.append("")
     return "\n".join(lines)
+
+
+def _for_case(case: IncidentCase, events: list[ProgressEvent]) -> list[ProgressEvent]:
+    incident_id = str(case.incident.id)
+    return [event for event in events if event.case_id in {incident_id, "-"}]
+
+
+def _waits(
+    case: IncidentCase,
+    events: list[ProgressEvent],
+    posted_at: datetime | None,
+) -> tuple[int | None, int | None]:
+    """Detection to slack_approval, and post to decision. Both, or neither."""
+    reached = [
+        event.occurred_at
+        for event in events
+        if event.node == "slack_approval" and event.phase == "start"
+    ]
+    if not reached or posted_at is None or case.approval is None:
+        return None, None
+    machine = max(int((min(reached) - case.incident.detected_at).total_seconds()), 0)
+    human = max(int((case.approval.decided_at - posted_at).total_seconds()), 0)
+    return machine, human
+
+
+def _decision_event(case: IncidentCase) -> TimelineEvent | None:
+    if case.approval is None:
+        return None
+    text = f"{case.approval.decision.value} by {mention_user(case.approval.approver)}"
+    if case.approval.comment:
+        text = f"{text}: {case.approval.comment}"
+    return TimelineEvent(occurred_at=case.approval.decided_at, actor="human", summary=text)
+
+
+def _shown(value: int | None) -> str:
+    return "not recorded" if value is None else str(value)

@@ -107,7 +107,11 @@ class OpenIndex:
     def upsert(self, case: OpenCase) -> None:
         with self._lock:
             items = self._load()
-            items[case.incident_id] = case.to_json()
+            payload = case.to_json()
+            current = items.get(case.incident_id)
+            if isinstance(current, dict) and isinstance(current.get("posted_at"), str):
+                payload["posted_at"] = current["posted_at"]
+            items[case.incident_id] = payload
             self._save(items)
 
     def remove(self, incident_id: str) -> None:
