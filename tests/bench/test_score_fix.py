@@ -140,6 +140,56 @@ def test_rejected_source_does_not_match() -> None:
     assert _frames_match(left, pd.DataFrame({"other": [1]})) is False
 
 
+def test_duplicate_copies_match_on_the_primary_key_when_row_counts_differ() -> None:
+    from meridian.bench.score_fix import _frames_match
+    from meridian.contracts.fault_type import FaultType
+
+    clean = generate_dataset("vehicle_telemetry", 4, rows=30)
+    corrupted, label = INJECTORS[FaultType.DUPLICATE_KEYS](
+        clean,
+        np.random.default_rng(4),
+        0.1,
+        dataset="vehicle_telemetry",
+        seed=4,
+    )
+    assert len(corrupted) > len(clean)
+    keys = ("vehicle_id", "ts")
+    assert _frames_match(corrupted, clean, keys) is True
+    conflict = corrupted.copy()
+    conflict.loc[conflict.index[-1], "speed_mps"] = -1.0
+    assert _frames_match(conflict, clean, keys) is False
+    repair = "def repair(df):\n    return df.drop_duplicates(['vehicle_id', 'ts'], keep='first')\n"
+    case, _label = _case(clean, FaultType.DUPLICATE_KEYS, RemediationKind.DATA_REPAIR, repair)
+    scored = score(case, clean, label)
+    assert scored.repaired_matches_clean is True
+    assert len(corrupted) != len(clean)
+
+
+def test_quarantine_matches_when_the_output_is_shorter_than_the_input() -> None:
+    from meridian.contracts.fault_type import FaultType
+
+    clean = generate_dataset("vehicle_telemetry", 4, rows=40)
+    source = "def quarantine(df):\n    return df.isna().any(axis=1)\n"
+    case, label = _case(clean, FaultType.NULL_EXPLOSION, RemediationKind.QUARANTINE, source)
+    scored = score(case, clean, label)
+    assert scored.kind_appropriate is True
+    assert scored.repaired_matches_clean is True
+    assert scored.rows_lost_pct > 1.0
+
+    duplicate_source = (
+        "def quarantine(df):\n    return df.duplicated(['vehicle_id', 'ts'], keep='first')\n"
+    )
+    duplicate_case, duplicate_label = _case(
+        clean,
+        FaultType.DUPLICATE_KEYS,
+        RemediationKind.QUARANTINE,
+        duplicate_source,
+    )
+    duplicate_score = score(duplicate_case, clean, duplicate_label)
+    assert duplicate_score.repaired_matches_clean is True
+    assert duplicate_score.rows_lost_pct > 1.0
+
+
 def test_appended_duplicate_rows_do_not_crash_the_comparison() -> None:
     from meridian.bench.score_fix import _changed_rows
 

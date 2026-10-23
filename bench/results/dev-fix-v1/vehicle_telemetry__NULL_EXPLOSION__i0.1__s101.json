@@ -21,6 +21,8 @@
       "llm_severity": "SEV2",
       "raw_causal_correct": true,
       "repaired_matches_clean": true,
+      "rescore": "ok",
+      "rescore_reason": "checkpoint 571df239-24bf-4193-82bc-4372e9aa1ee7",
       "severity": "SEV2",
       "verified": true
     }
@@ -35,6 +37,8 @@
       "id": "6a8b0271-1592-5869-a708-7d182fb40267"
     }
   ],
+  "infra_faults": [],
+  "infra_outcome_differs": false,
   "input_tokens": 32998,
   "intensity": 0.1,
   "machine_time_s": 183.173442,

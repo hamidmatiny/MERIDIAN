@@ -21,6 +21,8 @@
       "llm_severity": "SEV2",
       "raw_causal_correct": true,
       "repaired_matches_clean": true,
+      "rescore": "ok",
+      "rescore_reason": "saved kind does not need the patch diff",
       "severity": "SEV2",
       "verified": true
     }
@@ -35,6 +37,8 @@
       "id": "8750b5b9-dcee-5feb-923e-eb7039022ccb"
     }
   ],
+  "infra_faults": [],
+  "infra_outcome_differs": false,
   "input_tokens": 11704,
   "intensity": 0.1,
   "machine_time_s": 261.621484,

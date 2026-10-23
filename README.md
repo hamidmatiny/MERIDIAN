@@ -144,34 +144,41 @@ Mention the bot by its user id, not by display name: `@bot status` lists open ca
 
 ## Results
 
-Numbers below are copied from `bench/results/test-fix-v2/summary.json` and `bench/results/hard/summary.json`. The full write-up is [bench/results/test-fix-v2/REPORT.md](bench/results/test-fix-v2/REPORT.md). Hard mode is [bench/results/hard/REPORT.md](bench/results/hard/REPORT.md).
+Numbers below are copied from `bench/results/test-fix-v2/summary.json`. The full write-up is [bench/results/test-fix-v2/REPORT.md](bench/results/test-fix-v2/REPORT.md).
 
-The test split used fix.v2. Its summary's hard-mode rate is 0/0 because that split injects faults. The false-positive rate is the hard split.
+Every score was computed by scorer version `52154d863706cae02ee103a6b54081314321bf852a95b2d3a3eeb8f15a718c35` of src/meridian/bench/score_fix.py (parent commit `7edbd177c37080edc435cc43df11831aa22b8a20`).
 
-| metric | value | source |
-| --- | --- | --- |
-| detection recall | 72/72 | test-fix-v2 |
-| hard-mode FP rate | 0/30 | hard |
-| causal accuracy | 72/72 | test-fix-v2 |
-| kind_appropriate | 67/70 | test-fix-v2 |
-| verified | 27/72 | test-fix-v2 |
-| false-fix rate | 0/27 | test-fix-v2 |
-| escalation rate | 15/72 | test-fix-v2 |
-| machine time p50 | 261.621484 | test-fix-v2 |
-| USD per run | 0.0 | test-fix-v2 |
+started from a dirty tree
+
+| metric | value |
+| --- | --- |
+| detection recall | 72/72 |
+| hard-mode FP rate | 0/30 |
+| raw causal accuracy | 72/72 |
+| guarded causal accuracy | 72/72 |
+| kind_appropriate | 67/72 |
+| verified | 27/72 |
+| false-fix rate | 0/27 |
+| escalation rate | 15/72 |
+| critic confusion matrix | approved 38/14; rejected 1/6 |
+| machine time p50 | 261.621484 |
+| machine time p95 | 665.596556 |
+| USD per run | 0.0 |
 
 Dev versus test, from the comparisons stored on the test summary:
 
-| metric | dev-fix-v1 | dev-fix-v2 | test |
+| metric | dev-fix-v1 | dev-fix-v2 | test-fix-v2 |
 | --- | --- | --- | --- |
-| detection recall | 6/6 | 6/6 | 72/72 |
-| causal accuracy | 6/6 | 6/6 | 72/72 |
-| kind_appropriate | 3/6 | 6/6 | 67/70 |
+| detection_recall | 6/6 | 6/6 | 72/72 |
+| raw_causal_correct | 6/6 | 6/6 | 72/72 |
+| causal_event_correct | 6/6 | 6/6 | 72/72 |
+| kind_appropriate | 3/6 | 6/6 | 67/72 |
 | verified | 4/6 | 3/6 | 27/72 |
-| false-fix rate | 0/4 | 0/3 | 0/27 |
-| escalation rate | 2/6 | 1/6 | 15/72 |
-| machine time p50 | 241.808319 | 301.392669 | 261.621484 |
-| USD per run | 0.0 | 0.0 | 0.0 |
+| false_fix | 0/4 | 0/3 | 0/27 |
+| escalation | 2/6 | 1/6 | 15/72 |
+| machine_time_p50 | 241.808319 | 301.392669 | 261.621484 |
+| machine_time_p95 | 317.57882 | 412.32216 | 665.596556 |
+| usd_per_run | 0.0 | 0.0 | 0.0 |
 
 ## License
 

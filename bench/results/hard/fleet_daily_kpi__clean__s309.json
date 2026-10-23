@@ -7,6 +7,8 @@
   "decision": "BENCH_NO_HUMAN",
   "fault": null,
   "incidents": [],
+  "infra_faults": [],
+  "infra_outcome_differs": false,
   "input_tokens": 0,
   "intensity": null,
   "machine_time_s": null,

@@ -14,7 +14,7 @@ from meridian.agents.fix import active_fix_version
 from meridian.bench.hard import hard_frame, within_sla_late
 from meridian.bench.harness import _live_chats, execute_spec, guard_final, run_split
 from meridian.bench.record import summarize_run
-from meridian.bench.report import build_report
+from meridian.bench.report import build_report, render_readme_results
 from meridian.bench.splits import load_splits
 from meridian.contracts.incident_case import IncidentCase
 from meridian.contracts.partition_metadata import PartitionMetadata
@@ -51,7 +51,12 @@ def test_overlapping_seeds_are_refused(tmp_path: Path) -> None:
 
 
 def test_the_test_split_requires_final_and_a_second_final_requires_force(tmp_path: Path) -> None:
-    info = {"prompt_versions": {"fix": "v1"}, "commit": "abc"}
+    info = {
+        "prompt_versions": {"fix": "v1"},
+        "commit": "abc",
+        "dirty": False,
+        "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    }
     with pytest.raises(SystemExit, match="requires --final"):
         guard_final(tmp_path, info, split="test", final=False, force=False)
     assert guard_final(tmp_path, info, split="test", final=True, force=False) is False
@@ -62,6 +67,25 @@ def test_the_test_split_requires_final_and_a_second_final_requires_force(tmp_pat
     assert guard_final(tmp_path, info, split="test", final=True, force=True) is True
     lock = json.loads((tmp_path / "LOCK.json").read_text(encoding="utf-8"))
     assert lock["forced"] is True
+    assert lock["commit"] == "abc"
+    assert lock["dirty"] is False
+    assert lock["diff_sha256"].startswith("e3b0c442")
+
+
+def test_worktree_records_the_commit_the_dirty_flag_and_the_diff_hash() -> None:
+    from meridian.bench.harness import _worktree
+
+    info = _worktree()
+    assert len(info["commit"]) >= 7
+    assert isinstance(info["dirty"], bool)
+    assert len(info["diff_sha256"]) == 64
+
+
+def test_a_final_run_refuses_a_dirty_tree(tmp_path: Path) -> None:
+    info = {"prompt_versions": {"fix": "v2"}, "commit": "abc", "dirty": True, "diff_sha256": "abc"}
+    with pytest.raises(SystemExit, match="dirty tree"):
+        guard_final(tmp_path, info, split="test", final=True, force=True)
+    assert not (tmp_path / "LOCK.json").exists()
 
 
 def test_hard_frames_stay_inside_the_contract_and_arrive_inside_the_sla() -> None:
@@ -125,6 +149,30 @@ def test_report_states_false_fix_as_n_over_n() -> None:
         },
     )
     assert summary["fix"]["false_fix"]["text"] == "1/1"
+    scored = build_report(
+        [run],
+        meta={
+            "split": "test",
+            "commit": "abc",
+            "models": {},
+            "prompt_versions": {},
+            "ollama": "test",
+            "seeds": [201],
+            "forced_final": False,
+            "scorer_sha256": "abc123",
+            "scorer_parent_commit": "7edbd17",
+            "started_dirty": True,
+            "mixed_version": False,
+            "hard_mode_fp": {"n": 0, "N": 30, "text": "0/30"},
+        },
+    )
+    assert "scorer version `abc123`" in scored[0]
+    assert "started from a dirty tree" in scored[0]
+    assert "mixed-version" not in scored[0]
+    readme = render_readme_results(scored[1])
+    assert "0/30" in readme
+    assert "started from a dirty tree" in readme
+    assert "abc123" in readme
     assert "1/1" in text
     assert summary["critic"]["matrix"]["approved_bad"] == 1
     assert "No ground-truth severity" in text

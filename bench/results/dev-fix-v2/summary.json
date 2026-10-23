@@ -16,7 +16,8 @@
       "approved_good": 3,
       "rejected_bad": 0,
       "rejected_good": 0
-    }
+    },
+    "unscored": 0
   },
   "detection_by_dataset": {
     "vehicle_telemetry": {
@@ -119,6 +120,7 @@
       "n": 6,
       "text": "6/6"
     },
+    "match_not_rescored": 0,
     "repaired_matches_clean_among_verified": {
       "N": 3,
       "n": 3,
@@ -137,9 +139,31 @@
     "n": 0,
     "text": "0/0"
   },
+  "infra": {
+    "outcomes_differ": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "outcomes_unmeasured": 0,
+    "runs": [],
+    "runs_with_faults": {
+      "N": 6,
+      "n": 0,
+      "text": "0/6"
+    }
+  },
+  "integrity": {
+    "hard_mode_fp": null,
+    "mixed_version": false,
+    "scorer_parent_commit": "7edbd177c37080edc435cc43df11831aa22b8a20",
+    "scorer_sha256": "52154d863706cae02ee103a6b54081314321bf852a95b2d3a3eeb8f15a718c35",
+    "started_dirty": false
+  },
   "meta": {
     "commit": "637750d16f666ba371310e80204ba2c241836900",
     "forced_final": false,
+    "mixed_version": false,
     "models": {
       "critic": "gemma4:12b",
       "fix": "qwen3.5:27b-q4_K_M",
@@ -154,10 +178,13 @@
       "root_cause": "v1",
       "triage": "v1"
     },
+    "scorer_parent_commit": "7edbd177c37080edc435cc43df11831aa22b8a20",
+    "scorer_sha256": "52154d863706cae02ee103a6b54081314321bf852a95b2d3a3eeb8f15a718c35",
     "seeds": [
       101
     ],
-    "split": "dev"
+    "split": "dev",
+    "started_dirty": false
   },
   "ops": {
     "machine_time_n": 6,

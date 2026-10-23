@@ -7,6 +7,12 @@
           "n": 6,
           "text": "6/6"
         },
+        "critic_matrix": {
+          "approved_bad": 0,
+          "approved_good": 4,
+          "rejected_bad": 2,
+          "rejected_good": 0
+        },
         "detection_recall": {
           "N": 6,
           "n": 6,
@@ -34,6 +40,12 @@
           "text": "3/6"
         },
         "machine_time_p50": 241.808319,
+        "machine_time_p95": 317.57882,
+        "raw_causal_correct": {
+          "N": 6,
+          "n": 6,
+          "text": "6/6"
+        },
         "usd_per_run": 0.0,
         "verified": {
           "N": 6,
@@ -49,6 +61,12 @@
           "N": 6,
           "n": 6,
           "text": "6/6"
+        },
+        "critic_matrix": {
+          "approved_bad": 1,
+          "approved_good": 3,
+          "rejected_bad": 0,
+          "rejected_good": 0
         },
         "detection_recall": {
           "N": 6,
@@ -77,6 +95,12 @@
           "text": "6/6"
         },
         "machine_time_p50": 301.392669,
+        "machine_time_p95": 412.32216,
+        "raw_causal_correct": {
+          "N": 6,
+          "n": 6,
+          "text": "6/6"
+        },
         "usd_per_run": 0.0,
         "verified": {
           "N": 6,
@@ -104,7 +128,8 @@
       "approved_good": 38,
       "rejected_bad": 6,
       "rejected_good": 1
-    }
+    },
+    "unscored": 0
   },
   "detection_by_dataset": {
     "fleet_daily_kpi": {
@@ -223,10 +248,11 @@
       "text": "0/27"
     },
     "kind_appropriate": {
-      "N": 70,
+      "N": 72,
       "n": 67,
-      "text": "67/70"
+      "text": "67/72"
     },
+    "match_not_rescored": 0,
     "repaired_matches_clean_among_verified": {
       "N": 27,
       "n": 27,
@@ -245,9 +271,72 @@
     "n": 0,
     "text": "0/0"
   },
+  "infra": {
+    "outcomes_differ": {
+      "N": 4,
+      "n": 0,
+      "text": "0/4"
+    },
+    "outcomes_unmeasured": 4,
+    "runs": [
+      {
+        "faults": [
+          "attempt_1_ValueError"
+        ],
+        "outcome_differs": null,
+        "run_key": "trip_summary__DUPLICATE_KEYS__i0.1__s202"
+      },
+      {
+        "faults": [
+          "attempt_1_ValueError"
+        ],
+        "outcome_differs": null,
+        "run_key": "trip_summary__DUPLICATE_KEYS__i0.5__s202"
+      },
+      {
+        "faults": [
+          "mcp_timeout",
+          "broken_pipe"
+        ],
+        "outcome_differs": null,
+        "run_key": "trip_summary__SCHEMA_DRIFT__i0.1__s201"
+      },
+      {
+        "faults": [
+          "attempt_1_ValueError"
+        ],
+        "outcome_differs": null,
+        "run_key": "vehicle_telemetry__DUPLICATE_KEYS__i0.1__s201"
+      }
+    ],
+    "runs_with_faults": {
+      "N": 72,
+      "n": 4,
+      "text": "4/72"
+    }
+  },
+  "integrity": {
+    "hard_mode_fp": {
+      "N": 30,
+      "incidents": 0,
+      "n": 0,
+      "text": "0/30"
+    },
+    "mixed_version": false,
+    "scorer_parent_commit": "7edbd177c37080edc435cc43df11831aa22b8a20",
+    "scorer_sha256": "52154d863706cae02ee103a6b54081314321bf852a95b2d3a3eeb8f15a718c35",
+    "started_dirty": true
+  },
   "meta": {
     "commit": "637750d16f666ba371310e80204ba2c241836900",
     "forced_final": false,
+    "hard_mode_fp": {
+      "N": 30,
+      "incidents": 0,
+      "n": 0,
+      "text": "0/30"
+    },
+    "mixed_version": false,
     "models": {
       "critic": "gemma4:12b",
       "fix": "qwen3.5:27b-q4_K_M",
@@ -262,11 +351,14 @@
       "root_cause": "v1",
       "triage": "v1"
     },
+    "scorer_parent_commit": "7edbd177c37080edc435cc43df11831aa22b8a20",
+    "scorer_sha256": "52154d863706cae02ee103a6b54081314321bf852a95b2d3a3eeb8f15a718c35",
     "seeds": [
       201,
       202
     ],
-    "split": "test"
+    "split": "test",
+    "started_dirty": true
   },
   "ops": {
     "machine_time_n": 72,

@@ -27,7 +27,9 @@ def build_report(
         "fix": _fix(injected),
         "critic": _critic(injected),
         "ops": _ops(runs),
+        "infra": _infra(runs),
         "forced_final": bool(meta.get("forced_final")),
+        "integrity": _integrity(meta),
     }
     if comparisons:
         summary["comparisons"] = [
@@ -45,13 +47,16 @@ def _headline(summary: dict[str, Any]) -> dict[str, Any]:
     return {
         "detection_recall": summary.get("detection_recall"),
         "hard_fp": summary.get("hard_fp"),
+        "raw_causal_correct": root.get("raw_causal_correct"),
         "causal_event_correct": root.get("causal_event_correct"),
         "kind_appropriate": fix.get("kind_appropriate"),
         "verified": fix.get("verified"),
         "false_fix": fix.get("false_fix"),
         "escalation": fix.get("escalation"),
         "machine_time_p50": ops.get("machine_time_p50"),
+        "machine_time_p95": ops.get("machine_time_p95"),
         "usd_per_run": ops.get("usd_per_run"),
+        "critic_matrix": summary.get("critic", {}).get("matrix"),
     }
 
 
@@ -140,20 +145,23 @@ def _fix(runs: list[dict[str, Any]]) -> dict[str, Any]:
     appropriate = [case for case in rows if case.get("kind_appropriate") is not None]
     kind_ok = sum(1 for case in appropriate if case.get("kind_appropriate"))
     verified = [case for case in rows if case.get("verified")]
-    matched = sum(1 for case in verified if case.get("repaired_matches_clean"))
-    false_fix = sum(1 for case in verified if not case.get("repaired_matches_clean"))
+    scored = [case for case in verified if _match_known(case)]
+    matched = sum(1 for case in scored if case.get("repaired_matches_clean"))
+    false_fix = sum(1 for case in scored if case.get("repaired_matches_clean") is False)
     escalated = sum(1 for case in rows if case.get("escalated"))
     return {
         "kind_appropriate": _ratio(kind_ok, len(appropriate)),
         "verified": _ratio(len(verified), len(rows)),
         "escalation": _ratio(escalated, len(rows)),
-        "repaired_matches_clean_among_verified": _ratio(matched, len(verified)),
-        "false_fix": _ratio(false_fix, len(verified)),
+        "repaired_matches_clean_among_verified": _ratio(matched, len(scored)),
+        "false_fix": _ratio(false_fix, len(scored)),
+        "match_not_rescored": sum(1 for case in rows if not _match_known(case)),
     }
 
 
 def _critic(runs: list[dict[str, Any]]) -> dict[str, Any]:
-    rows = [case for case in _cases(runs) if case.get("has_verdict")]
+    verdicts = [case for case in _cases(runs) if case.get("has_verdict")]
+    rows = [case for case in verdicts if _match_known(case)]
     matrix = {
         "approved_good": 0,
         "approved_bad": 0,
@@ -166,12 +174,13 @@ def _critic(runs: list[dict[str, Any]]) -> dict[str, Any]:
             matrix["approved_good" if good else "approved_bad"] += 1
         else:
             matrix["rejected_good" if good else "rejected_bad"] += 1
-    degraded = sum(1 for case in rows if case.get("critic_degraded"))
-    corrective = sum(1 for case in rows if case.get("critic_corrective"))
+    degraded = sum(1 for case in verdicts if case.get("critic_degraded"))
+    corrective = sum(1 for case in verdicts if case.get("critic_corrective"))
     return {
         "matrix": matrix,
-        "degraded": _ratio(degraded, len(rows)),
-        "corrective": _ratio(corrective, len(rows)),
+        "degraded": _ratio(degraded, len(verdicts)),
+        "corrective": _ratio(corrective, len(verdicts)),
+        "unscored": len(verdicts) - len(rows),
         "good_means": "repaired_matches_clean from score_fix",
     }
 
@@ -218,6 +227,41 @@ def _ops(runs: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _match_known(case: dict[str, Any]) -> bool:
+    """A missing match is not a failure. It was not re-scored."""
+    return "repaired_matches_clean" in case and case["repaired_matches_clean"] is not None
+
+
+def _infra(runs: list[dict[str, Any]]) -> dict[str, Any]:
+    flagged = [run for run in runs if run.get("infra_faults")]
+    differ = [run for run in flagged if run.get("infra_outcome_differs") is True]
+    return {
+        "runs_with_faults": _ratio(len(flagged), len(runs)),
+        "outcomes_differ": _ratio(len(differ), len(flagged)),
+        "outcomes_unmeasured": sum(
+            1 for run in flagged if run.get("infra_outcome_differs") is None
+        ),
+        "runs": [
+            {
+                "run_key": run.get("run_key"),
+                "faults": list(run.get("infra_faults") or []),
+                "outcome_differs": run.get("infra_outcome_differs"),
+            }
+            for run in flagged
+        ],
+    }
+
+
+def _integrity(meta: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "scorer_sha256": meta.get("scorer_sha256"),
+        "scorer_parent_commit": meta.get("scorer_parent_commit"),
+        "mixed_version": bool(meta.get("mixed_version")),
+        "started_dirty": bool(meta.get("started_dirty")),
+        "hard_mode_fp": meta.get("hard_mode_fp"),
+    }
+
+
 def _cases(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     found: list[dict[str, Any]] = []
     for run in runs:
@@ -249,6 +293,7 @@ def _markdown(summary: dict[str, Any], comparisons: list[tuple[str, dict[str, An
         f"- ollama: `{meta.get('ollama')}`",
         f"- seeds and split: `{meta.get('seeds')}` / {meta.get('split')}",
         f"- forced second final: {summary['forced_final']}",
+        *_integrity_lines(summary),
         "",
         "## Headline",
         "",
@@ -300,6 +345,14 @@ def _markdown(summary: dict[str, Any], comparisons: list[tuple[str, dict[str, An
             "- repaired_matches_clean among verified: "
             f"{_show(summary['fix']['repaired_matches_clean_among_verified'])}",
             f"- FALSE-FIX RATE: {_show(summary['fix']['false_fix'])}",
+            f"- match not re-scored: {summary['fix']['match_not_rescored']}",
+            "",
+            "## Infra",
+            "",
+            f"- runs with infra faults: {_show(summary['infra']['runs_with_faults'])}",
+            f"- of those, outcomes differ: {_show(summary['infra']['outcomes_differ'])}",
+            f"- outcomes unmeasured: {summary['infra']['outcomes_unmeasured']}",
+            _infra_lines(summary["infra"]["runs"]),
             "",
             "## Critic",
             "",
@@ -309,6 +362,7 @@ def _markdown(summary: dict[str, Any], comparisons: list[tuple[str, dict[str, An
             "",
             f"- degraded: {_show(summary['critic']['degraded'])}",
             f"- corrective: {_show(summary['critic']['corrective'])}",
+            f"- verdicts with no re-scored match: {summary['critic']['unscored']}",
             "",
             "## Ops",
             "",
@@ -335,12 +389,15 @@ def _headline_table(summary: dict[str, Any]) -> str:
             "| --- | --- |",
             f"| detection recall | {_show(head['detection_recall'])} |",
             f"| hard-mode FP rate | {_show(head['hard_fp'])} |",
-            f"| causal accuracy | {_show(head['causal_event_correct'])} |",
+            f"| raw causal accuracy | {_show(head['raw_causal_correct'])} |",
+            f"| guarded causal accuracy | {_show(head['causal_event_correct'])} |",
             f"| kind_appropriate | {_show(head['kind_appropriate'])} |",
             f"| verified | {_show(head['verified'])} |",
             f"| false-fix rate | {_show(head['false_fix'])} |",
             f"| escalation rate | {_show(head['escalation'])} |",
+            f"| critic confusion matrix | {_matrix_cell(head.get('critic_matrix'))} |",
             f"| machine time p50 | {head['machine_time_p50']} |",
+            f"| machine time p95 | {head['machine_time_p95']} |",
             f"| USD per run | {head['usd_per_run']} |",
         ]
     )
@@ -356,12 +413,14 @@ def _comparison_table(
     rule = "| --- | " + " | ".join("---" for _row in rows) + " |"
     keys = [
         "detection_recall",
+        "raw_causal_correct",
         "causal_event_correct",
         "kind_appropriate",
         "verified",
         "false_fix",
         "escalation",
         "machine_time_p50",
+        "machine_time_p95",
         "usd_per_run",
     ]
     body = []
@@ -386,6 +445,117 @@ def _matrix(matrix: dict[str, int]) -> str:
             f"| rejected | {matrix['rejected_good']} | {matrix['rejected_bad']} |",
         ]
     )
+
+
+def _integrity_lines(summary: dict[str, Any]) -> list[str]:
+    info = summary.get("integrity") or {}
+    lines: list[str] = []
+    digest = info.get("scorer_sha256")
+    parent = info.get("scorer_parent_commit")
+    if digest:
+        lines.append(
+            "- every score was computed by scorer version "
+            f"`{digest}` of src/meridian/bench/score_fix.py "
+            f"(parent commit `{parent}`)"
+        )
+    if info.get("mixed_version"):
+        lines.append("- mixed-version test run")
+    if info.get("started_dirty"):
+        lines.append("- this test run started from a dirty tree. LOCK.json was not rewritten.")
+    return lines
+
+
+def _infra_lines(runs: list[dict[str, Any]]) -> str:
+    if not runs:
+        return "- none"
+    return "\n".join(
+        f"- `{item['run_key']}`: {', '.join(item['faults'])}; "
+        f"outcome_differs={item['outcome_differs']}"
+        for item in runs
+    )
+
+
+def _matrix_cell(matrix: object) -> str:
+    if not isinstance(matrix, dict):
+        return "n/a"
+    return (
+        f"approved {matrix.get('approved_good', 0)}/{matrix.get('approved_bad', 0)}; "
+        f"rejected {matrix.get('rejected_good', 0)}/{matrix.get('rejected_bad', 0)}"
+    )
+
+
+def render_readme_results(summary: dict[str, Any]) -> str:
+    """README Results copied from the test summary. No number is introduced here."""
+    head = _headline(summary)
+    integrity = summary.get("integrity") or {}
+    lines = [
+        "## Results",
+        "",
+        "Numbers below are copied from `bench/results/test-fix-v2/summary.json`. "
+        "The full write-up is "
+        "[bench/results/test-fix-v2/REPORT.md](bench/results/test-fix-v2/REPORT.md).",
+        "",
+        "Every score was computed by scorer version "
+        f"`{integrity.get('scorer_sha256')}` of src/meridian/bench/score_fix.py "
+        f"(parent commit `{integrity.get('scorer_parent_commit')}`).",
+        "",
+    ]
+    if integrity.get("mixed_version"):
+        lines.append("mixed-version test run")
+        lines.append("")
+    if integrity.get("started_dirty"):
+        lines.append("started from a dirty tree")
+        lines.append("")
+    hard_fp = integrity.get("hard_mode_fp") or head["hard_fp"]
+    lines.extend(
+        [
+            "| metric | value |",
+            "| --- | --- |",
+            f"| detection recall | {_show(head['detection_recall'])} |",
+            f"| hard-mode FP rate | {_show(hard_fp)} |",
+            f"| raw causal accuracy | {_show(head['raw_causal_correct'])} |",
+            f"| guarded causal accuracy | {_show(head['causal_event_correct'])} |",
+            f"| kind_appropriate | {_show(head['kind_appropriate'])} |",
+            f"| verified | {_show(head['verified'])} |",
+            f"| false-fix rate | {_show(head['false_fix'])} |",
+            f"| escalation rate | {_show(head['escalation'])} |",
+            f"| critic confusion matrix | {_matrix_cell(head.get('critic_matrix'))} |",
+            f"| machine time p50 | {head['machine_time_p50']} |",
+            f"| machine time p95 | {head['machine_time_p95']} |",
+            f"| USD per run | {head['usd_per_run']} |",
+            "",
+            "Dev versus test, from the comparisons stored on the test summary:",
+            "",
+            _readme_comparison(summary),
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _readme_comparison(summary: dict[str, Any]) -> str:
+    stored = summary.get("comparisons") or []
+    rows = [(str(item["label"]), item["headline"]) for item in stored]
+    rows.append(("test-fix-v2", _headline(summary)))
+    header = "| metric | " + " | ".join(label for label, _head in rows) + " |"
+    rule = "| --- | " + " | ".join("---" for _row in rows) + " |"
+    keys = [
+        "detection_recall",
+        "raw_causal_correct",
+        "causal_event_correct",
+        "kind_appropriate",
+        "verified",
+        "false_fix",
+        "escalation",
+        "machine_time_p50",
+        "machine_time_p95",
+        "usd_per_run",
+    ]
+    body = [
+        f"| {key} | " + " | ".join(_show(head.get(key)) for _label, head in rows) + " |"
+        for key in keys
+    ]
+    return "\n".join([header, rule, *body])
 
 
 def _show(value: object) -> str:

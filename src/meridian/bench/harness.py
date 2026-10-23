@@ -5,6 +5,7 @@ parallelism. The default is 1 because the two resident models already fill the m
 A higher bench parallel queues on the GPU when OLLAMA_NUM_PARALLEL is left at 1.
 """
 
+import hashlib
 import json
 import os
 import subprocess
@@ -60,8 +61,10 @@ def parallel_workers() -> int:
 
 
 def identity(settings: Settings) -> dict[str, Any]:
+    """Lock fields include the commit, whether the tree is dirty, and the diff hash."""
+    tree = _worktree()
     return {
-        "commit": _git_head(),
+        **tree,
         "prompt_versions": {
             "triage": TRIAGE_PROMPT_VERSION,
             "root_cause": ROOT_CAUSE_PROMPT_VERSION,
@@ -94,6 +97,8 @@ def guard_final(
     """
     if split == "test" and not final:
         raise SystemExit("the test split requires --final")
+    if final and info.get("dirty"):
+        raise SystemExit("a final run refuses a dirty tree")
     if not final:
         return False
     directory.mkdir(parents=True, exist_ok=True)
@@ -412,11 +417,26 @@ def _log(path: Path, message: str) -> None:
     print(line, file=sys.stderr)
 
 
+def _worktree() -> dict[str, Any]:
+    """``git diff HEAD`` hashed at start. A dirty tree cannot begin ``--final``."""
+    diff = _git_text(["git", "diff", "HEAD"])
+    porcelain = _git_text(["git", "status", "--porcelain"])
+    return {
+        "commit": _git_head(),
+        "dirty": bool(porcelain.strip()),
+        "diff_sha256": hashlib.sha256(diff.encode()).hexdigest(),
+    }
+
+
 def _git_head() -> str:
+    return _git_text(["git", "rev-parse", "HEAD"]).strip() or "unknown"
+
+
+def _git_text(command: list[str]) -> str:
     try:
-        return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+        return subprocess.check_output(command, text=True)
     except (OSError, subprocess.CalledProcessError):
-        return "unknown"
+        return ""
 
 
 def _ollama_version() -> str:
