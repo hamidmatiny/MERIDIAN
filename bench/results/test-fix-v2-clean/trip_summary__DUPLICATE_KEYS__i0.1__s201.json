@@ -1,0 +1,100 @@
+{
+  "abort_reason": "",
+  "applied": false,
+  "cases": [
+    {
+      "causal_event_correct": true,
+      "columns_jaccard": 1.0,
+      "critic_approved": false,
+      "critic_corrective": false,
+      "critic_degraded": false,
+      "escalated": true,
+      "fault": "DUPLICATE_KEYS",
+      "floor_raised": false,
+      "floor_severity": "SEV3",
+      "grounding_violations": 0,
+      "guardrail_fn": false,
+      "has_hypothesis": true,
+      "has_verdict": true,
+      "kind": "ESCALATE",
+      "kind_appropriate": false,
+      "llm_severity": "SEV3",
+      "raw_causal_correct": true,
+      "repaired_matches_clean": false,
+      "severity": "SEV3",
+      "verified": false
+    }
+  ],
+  "completed": true,
+  "dataset": "trip_summary",
+  "decision": "BENCH_NO_HUMAN",
+  "fault": "DUPLICATE_KEYS",
+  "incidents": [
+    {
+      "fault": "DUPLICATE_KEYS",
+      "id": "c84229d8-4136-58bb-a8a4-c47e0226487f"
+    }
+  ],
+  "input_tokens": 77245,
+  "intensity": 0.1,
+  "machine_time_s": 383.057533,
+  "node_latency_ms": {
+    "critic": [
+      7227,
+      10604
+    ],
+    "fix": [
+      28809,
+      6216,
+      7105,
+      5687,
+      7905,
+      30026,
+      17252,
+      6248,
+      7228,
+      5906,
+      9486,
+      110634
+    ],
+    "root_cause": [
+      20665,
+      6022,
+      4436,
+      4885,
+      10480,
+      9142,
+      12636,
+      23234
+    ],
+    "triage": [
+      30818
+    ]
+  },
+  "output_tokens": 3566,
+  "run_key": "trip_summary__DUPLICATE_KEYS__i0.1__s201",
+  "seed": 201,
+  "split": "test",
+  "structured": {
+    "critic": {
+      "n": 2,
+      "ok": 2
+    },
+    "fix": {
+      "n": 2,
+      "ok": 2
+    },
+    "root_cause": {
+      "n": 1,
+      "ok": 1
+    },
+    "triage": {
+      "n": 1,
+      "ok": 1
+    }
+  },
+  "timeouts": 0,
+  "usd": 0.0,
+  "wall_abort": false,
+  "wall_s": 386.2769704169914
+}

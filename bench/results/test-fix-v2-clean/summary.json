@@ -1,0 +1,448 @@
+{
+  "comparisons": [
+    {
+      "headline": {
+        "causal_event_correct": {
+          "N": 6,
+          "n": 6,
+          "text": "6/6"
+        },
+        "critic_matrix": {
+          "approved_bad": 0,
+          "approved_good": 4,
+          "rejected_bad": 2,
+          "rejected_good": 0
+        },
+        "detection_recall": {
+          "N": 6,
+          "n": 6,
+          "text": "6/6"
+        },
+        "escalation": {
+          "N": 6,
+          "n": 2,
+          "text": "2/6"
+        },
+        "false_fix": {
+          "N": 4,
+          "n": 0,
+          "text": "0/4"
+        },
+        "hard_fp": {
+          "N": 0,
+          "incidents": 0,
+          "n": 0,
+          "text": "0/0"
+        },
+        "kind_appropriate": {
+          "N": 6,
+          "n": 3,
+          "text": "3/6"
+        },
+        "machine_time_p50": 241.808319,
+        "machine_time_p95": 317.57882,
+        "raw_causal_correct": {
+          "N": 6,
+          "n": 6,
+          "text": "6/6"
+        },
+        "usd_per_run": 0.0,
+        "verified": {
+          "N": 6,
+          "n": 4,
+          "text": "4/6"
+        }
+      },
+      "label": "dev-fix-v1"
+    },
+    {
+      "headline": {
+        "causal_event_correct": {
+          "N": 6,
+          "n": 6,
+          "text": "6/6"
+        },
+        "critic_matrix": {
+          "approved_bad": 1,
+          "approved_good": 3,
+          "rejected_bad": 0,
+          "rejected_good": 0
+        },
+        "detection_recall": {
+          "N": 6,
+          "n": 6,
+          "text": "6/6"
+        },
+        "escalation": {
+          "N": 6,
+          "n": 1,
+          "text": "1/6"
+        },
+        "false_fix": {
+          "N": 3,
+          "n": 0,
+          "text": "0/3"
+        },
+        "hard_fp": {
+          "N": 0,
+          "incidents": 0,
+          "n": 0,
+          "text": "0/0"
+        },
+        "kind_appropriate": {
+          "N": 6,
+          "n": 6,
+          "text": "6/6"
+        },
+        "machine_time_p50": 301.392669,
+        "machine_time_p95": 412.32216,
+        "raw_causal_correct": {
+          "N": 6,
+          "n": 6,
+          "text": "6/6"
+        },
+        "usd_per_run": 0.0,
+        "verified": {
+          "N": 6,
+          "n": 3,
+          "text": "3/6"
+        }
+      },
+      "label": "dev-fix-v2"
+    }
+  ],
+  "critic": {
+    "approval_precision": {
+      "N": 49,
+      "n": 33,
+      "text": "33/49"
+    },
+    "bad_patch_catch_rate": {
+      "N": 25,
+      "n": 9,
+      "text": "9/25"
+    },
+    "corrective": {
+      "N": 59,
+      "n": 6,
+      "text": "6/59"
+    },
+    "degraded": {
+      "N": 59,
+      "n": 0,
+      "text": "0/59"
+    },
+    "good_means": "repaired_matches_clean from score_fix",
+    "matrix": {
+      "approved_bad": 16,
+      "approved_good": 33,
+      "rejected_bad": 9,
+      "rejected_good": 1
+    },
+    "unscored": 0,
+    "verifier_blocked_bad": 16
+  },
+  "detection_by_dataset": {
+    "fleet_daily_kpi": {
+      "N": 24,
+      "n": 24,
+      "text": "24/24"
+    },
+    "trip_summary": {
+      "N": 24,
+      "n": 24,
+      "text": "24/24"
+    },
+    "vehicle_telemetry": {
+      "N": 24,
+      "n": 24,
+      "text": "24/24"
+    }
+  },
+  "detection_by_fault": {
+    "DISTRIBUTION_SHIFT": {
+      "N": 12,
+      "n": 12,
+      "text": "12/12"
+    },
+    "DUPLICATE_KEYS": {
+      "N": 12,
+      "n": 12,
+      "text": "12/12"
+    },
+    "LATE_PARTITION": {
+      "N": 12,
+      "n": 12,
+      "text": "12/12"
+    },
+    "NULL_EXPLOSION": {
+      "N": 12,
+      "n": 12,
+      "text": "12/12"
+    },
+    "SCHEMA_DRIFT": {
+      "N": 12,
+      "n": 12,
+      "text": "12/12"
+    },
+    "UNIT_MISMATCH": {
+      "N": 12,
+      "n": 12,
+      "text": "12/12"
+    }
+  },
+  "detection_precision": {
+    "by_dataset": {
+      "fleet_daily_kpi": {
+        "N": 24,
+        "n": 24,
+        "text": "24/24"
+      },
+      "trip_summary": {
+        "N": 24,
+        "n": 24,
+        "text": "24/24"
+      },
+      "vehicle_telemetry": {
+        "N": 24,
+        "n": 24,
+        "text": "24/24"
+      }
+    },
+    "by_fault": {
+      "DISTRIBUTION_SHIFT": {
+        "N": 12,
+        "n": 12,
+        "text": "12/12"
+      },
+      "DUPLICATE_KEYS": {
+        "N": 12,
+        "n": 12,
+        "text": "12/12"
+      },
+      "LATE_PARTITION": {
+        "N": 12,
+        "n": 12,
+        "text": "12/12"
+      },
+      "NULL_EXPLOSION": {
+        "N": 12,
+        "n": 12,
+        "text": "12/12"
+      },
+      "SCHEMA_DRIFT": {
+        "N": 12,
+        "n": 12,
+        "text": "12/12"
+      },
+      "UNIT_MISMATCH": {
+        "N": 12,
+        "n": 12,
+        "text": "12/12"
+      }
+    }
+  },
+  "detection_recall": {
+    "N": 72,
+    "n": 72,
+    "text": "72/72"
+  },
+  "evidence": {
+    "distribution": {
+      "1": 48,
+      "2": 24
+    },
+    "easy_evidence": true,
+    "exactly_one": {
+      "N": 72,
+      "n": 48,
+      "text": "48/72"
+    },
+    "note": "causal accuracy reflects an easy evidence world"
+  },
+  "fix": {
+    "escalation": {
+      "N": 72,
+      "n": 17,
+      "text": "17/72"
+    },
+    "false_fix": {
+      "N": 27,
+      "n": 0,
+      "text": "0/27"
+    },
+    "kind_appropriate": {
+      "N": 72,
+      "n": 68,
+      "text": "68/72"
+    },
+    "match_not_rescored": 0,
+    "repaired_matches_clean_among_verified": {
+      "N": 27,
+      "n": 27,
+      "text": "27/27"
+    },
+    "verified": {
+      "N": 72,
+      "n": 27,
+      "text": "27/72"
+    }
+  },
+  "forced_final": false,
+  "hard_fp": {
+    "N": 0,
+    "incidents": 0,
+    "n": 0,
+    "text": "0/0"
+  },
+  "infra": {
+    "outcomes_differ": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "outcomes_unmeasured": 0,
+    "runs": [],
+    "runs_with_faults": {
+      "N": 72,
+      "n": 0,
+      "text": "0/72"
+    }
+  },
+  "integrity": {
+    "hard_mode_fp": null,
+    "label": "",
+    "mixed_version": false,
+    "scorer_parent_commit": null,
+    "scorer_sha256": null,
+    "started_dirty": false
+  },
+  "meta": {
+    "commit": "c56af95d45cedb380a803d820a5d2dd4058fc422",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "dirty": false,
+    "forced_final": false,
+    "models": {
+      "critic": "gemma4:12b",
+      "fix": "qwen3.5:27b-q4_K_M",
+      "root_cause": "qwen3.5:27b-q4_K_M",
+      "triage": "qwen3.5:27b-q4_K_M"
+    },
+    "ollama": "ollama version is 0.40.6",
+    "prompt_versions": {
+      "critic": "v1",
+      "fix": "v2",
+      "fix_default": "v1",
+      "root_cause": "v1",
+      "triage": "v1"
+    },
+    "seeds": [
+      201,
+      202
+    ],
+    "split": "test"
+  },
+  "ops": {
+    "machine_time_n": 72,
+    "machine_time_p50": 288.367448,
+    "machine_time_p95": 498.95234,
+    "node_latency_ms": {
+      "critic": {
+        "p50": 4285.0,
+        "p95": 11395.0
+      },
+      "fix": {
+        "p50": 9354.0,
+        "p95": 61631.0
+      },
+      "root_cause": {
+        "p50": 9847.0,
+        "p95": 23727.0
+      },
+      "triage": {
+        "p50": 23043.0,
+        "p95": 34411.0
+      }
+    },
+    "structured_success_rate": {
+      "critic": {
+        "N": 101,
+        "n": 95,
+        "text": "95/101"
+      },
+      "fix": {
+        "N": 149,
+        "n": 147,
+        "text": "147/149"
+      },
+      "root_cause": {
+        "N": 72,
+        "n": 72,
+        "text": "72/72"
+      },
+      "triage": {
+        "N": 72,
+        "n": 72,
+        "text": "72/72"
+      }
+    },
+    "timeouts": 0,
+    "tokens_per_run": 55024.11111111111,
+    "usd_per_run": 0.0,
+    "usd_total": 0.0,
+    "wall_aborts": {
+      "N": 72,
+      "n": 0,
+      "text": "0/72"
+    },
+    "wall_p50": 294.94140833299025,
+    "wall_p95": 502.09007674999884
+  },
+  "outcomes": {
+    "N": 72,
+    "categories": {
+      "AGENT_ESCALATED": 17,
+      "CRITIC_LIMIT": 2,
+      "FIX_ATTEMPT_LIMIT": 26,
+      "NO_PATCH": 0,
+      "OTHER": 0,
+      "VERIFIED_AWAITING_APPROVAL": 27,
+      "WALL_BUDGET": 0
+    },
+    "other": []
+  },
+  "root_cause": {
+    "causal_event_correct": {
+      "N": 72,
+      "n": 71,
+      "text": "71/72"
+    },
+    "guardrail_false_negative": {
+      "N": 72,
+      "n": 0,
+      "text": "0/72"
+    },
+    "mean_columns_jaccard": 0.9305555555555556,
+    "mean_grounding_violations": 0.0,
+    "raw_causal_correct": {
+      "N": 72,
+      "n": 71,
+      "text": "71/72"
+    }
+  },
+  "runs": 72,
+  "triage": {
+    "distribution": {
+      "SEV1": 4,
+      "SEV2": 35,
+      "SEV3": 25,
+      "SEV4": 8
+    },
+    "floor_raise": {
+      "N": 72,
+      "n": 0,
+      "text": "0/72"
+    },
+    "note": "No ground-truth severity exists. This is not an accuracy."
+  }
+}

@@ -144,40 +144,59 @@ Mention the bot by its user id, not by display name: `@bot status` lists open ca
 
 ## Results
 
-Numbers below are copied from `bench/results/test-fix-v2/summary.json`. The full write-up is [bench/results/test-fix-v2/REPORT.md](bench/results/test-fix-v2/REPORT.md).
+This is a synthetic benchmark.
 
-Every score was computed by scorer version `52154d863706cae02ee103a6b54081314321bf852a95b2d3a3eeb8f15a718c35` of src/meridian/bench/score_fix.py (parent commit `7edbd177c37080edc435cc43df11831aa22b8a20`).
+Numbers below are copied from `bench/results/test-fix-v2-clean/summary.json`. The full write-up is [bench/results/test-fix-v2-clean/REPORT.md](bench/results/test-fix-v2-clean/REPORT.md).
 
-started from a dirty tree
+The earlier run in [bench/results/test-fix-v2/REPORT.md](bench/results/test-fix-v2/REPORT.md) is a dirty-tree run, superseded.
 
 | metric | value |
 | --- | --- |
 | detection recall | 72/72 |
-| hard-mode FP rate | 0/30 |
-| raw causal accuracy | 72/72 |
-| guarded causal accuracy | 72/72 |
-| kind_appropriate | 67/72 |
+| hard-mode FP rate | 0/0 |
+| raw causal accuracy | 71/72 |
+| guarded causal accuracy | 71/72 |
+| kind_appropriate | 68/72 |
 | verified | 27/72 |
 | false-fix rate | 0/27 |
-| escalation rate | 15/72 |
-| critic confusion matrix | approved 38/14; rejected 1/6 |
-| machine time p50 | 261.621484 |
-| machine time p95 | 665.596556 |
+| escalation rate | 17/72 |
+| critic confusion matrix | approved 33/16; rejected 1/9 |
+| machine time p50 | 288.367448 |
+| machine time p95 | 498.95234 |
 | USD per run | 0.0 |
+
+## Outcome breakdown
+
+- VERIFIED_AWAITING_APPROVAL: 27
+- AGENT_ESCALATED: 17
+- CRITIC_LIMIT: 2
+- FIX_ATTEMPT_LIMIT: 26
+- WALL_BUDGET: 0
+- NO_PATCH: 0
+- OTHER: 0
+- sum: 72
+
+- bad-patch catch rate: 9/25
+- approval precision: 33/49
+Safety comes from the deterministic verifier: 16 bad patches approved by the LLM critic were blocked before reaching a human.
+
+causal accuracy reflects an easy evidence world
+- evidence distribution: `{'1': 48, '2': 24}`
+- exactly one candidate: 48/72
 
 Dev versus test, from the comparisons stored on the test summary:
 
-| metric | dev-fix-v1 | dev-fix-v2 | test-fix-v2 |
+| metric | dev-fix-v1 | dev-fix-v2 | test-fix-v2-clean |
 | --- | --- | --- | --- |
 | detection_recall | 6/6 | 6/6 | 72/72 |
-| raw_causal_correct | 6/6 | 6/6 | 72/72 |
-| causal_event_correct | 6/6 | 6/6 | 72/72 |
-| kind_appropriate | 3/6 | 6/6 | 67/72 |
+| raw_causal_correct | 6/6 | 6/6 | 71/72 |
+| causal_event_correct | 6/6 | 6/6 | 71/72 |
+| kind_appropriate | 3/6 | 6/6 | 68/72 |
 | verified | 4/6 | 3/6 | 27/72 |
 | false_fix | 0/4 | 0/3 | 0/27 |
-| escalation | 2/6 | 1/6 | 15/72 |
-| machine_time_p50 | 241.808319 | 301.392669 | 261.621484 |
-| machine_time_p95 | 317.57882 | 412.32216 | 665.596556 |
+| escalation | 2/6 | 1/6 | 17/72 |
+| machine_time_p50 | 241.808319 | 301.392669 | 288.367448 |
+| machine_time_p95 | 317.57882 | 412.32216 | 498.95234 |
 | usd_per_run | 0.0 | 0.0 | 0.0 |
 
 ## License

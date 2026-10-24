@@ -306,6 +306,7 @@ def test_disclosures_reach_the_report_and_the_readme() -> None:
     assert "mixed-version test run" in readme
     assert "started from a dirty tree" not in readme
     assert "dev-fix-v1" in readme
+    assert "test-fix-v2-clean" in readme
     assert f"{blocked} bad patches approved by the LLM critic were" in readme
     noted = {
         **summary,

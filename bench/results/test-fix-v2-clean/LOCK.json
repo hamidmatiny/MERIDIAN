@@ -1,0 +1,20 @@
+{
+  "commit": "c56af95d45cedb380a803d820a5d2dd4058fc422",
+  "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "dirty": false,
+  "forced": false,
+  "models": {
+    "critic": "gemma4:12b",
+    "fix": "qwen3.5:27b-q4_K_M",
+    "root_cause": "qwen3.5:27b-q4_K_M",
+    "triage": "qwen3.5:27b-q4_K_M"
+  },
+  "ollama": "ollama version is 0.40.6",
+  "prompt_versions": {
+    "critic": "v1",
+    "fix": "v2",
+    "fix_default": "v1",
+    "root_cause": "v1",
+    "triage": "v1"
+  }
+}

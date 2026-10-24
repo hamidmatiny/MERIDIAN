@@ -701,7 +701,7 @@ def render_readme_results(summary: dict[str, Any]) -> str:
 def _readme_comparison(summary: dict[str, Any]) -> str:
     stored = summary.get("comparisons") or []
     rows = [(str(item["label"]), item["headline"]) for item in stored]
-    rows.append(("test-fix-v2", _headline(summary)))
+    rows.append(("test-fix-v2-clean", _headline(summary)))
     header = "| metric | " + " | ".join(label for label, _head in rows) + " |"
     rule = "| --- | " + " | ".join("---" for _row in rows) + " |"
     keys = [
