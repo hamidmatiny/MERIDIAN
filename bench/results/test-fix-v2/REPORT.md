@@ -6,6 +6,7 @@
 - ollama: `ollama version is 0.40.6`
 - seeds and split: `[201, 202]` / test
 - forced second final: False
+- dirty-tree run, superseded
 - every score was computed by scorer version `52154d863706cae02ee103a6b54081314321bf852a95b2d3a3eeb8f15a718c35` of src/meridian/bench/score_fix.py (parent commit `7edbd177c37080edc435cc43df11831aa22b8a20`)
 - this test run started from a dirty tree. LOCK.json was not rewritten.
 
@@ -84,6 +85,9 @@ No ground-truth severity exists. This is not an accuracy.
 - guardrail false-negative: 0/72
 - mean columns_jaccard: 0.9444444444444444
 - mean grounding violations: 0.0
+- evidence candidates by kind and dataset: `{'1': 48, '2': 24}`
+- runs with exactly one candidate: 48/72
+- causal accuracy reflects an easy evidence world
 
 ## Fix
 
@@ -93,6 +97,17 @@ No ground-truth severity exists. This is not an accuracy.
 - repaired_matches_clean among verified: 27/27
 - FALSE-FIX RATE: 0/27
 - match not re-scored: 0
+
+## Outcomes
+
+- VERIFIED_AWAITING_APPROVAL: 27
+- AGENT_ESCALATED: 15
+- CRITIC_LIMIT: 1
+- FIX_ATTEMPT_LIMIT: 27
+- WALL_BUDGET: 2
+- NO_PATCH: 0
+- OTHER: 0
+- sum: 72
 
 ## Infra
 
@@ -116,6 +131,9 @@ Good means `repaired_matches_clean` from score_fix.
 - degraded: 0/59
 - corrective: 3/59
 - verdicts with no re-scored match: 0
+- bad-patch catch rate: 6/20
+- approval precision: 38/52
+- bad approved patches blocked by the verifier: 14
 
 ## Ops
 

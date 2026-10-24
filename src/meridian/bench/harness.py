@@ -43,7 +43,15 @@ def results_root() -> Path:
 
 
 def bench_id(split: str) -> str:
-    """One directory per split and fix-prompt version, so v1 and v2 do not collide."""
+    """One directory per split and fix-prompt version, so v1 and v2 do not collide.
+
+    ``MERIDIAN_BENCH_ID`` selects another directory, such as ``test-fix-v2-clean``.
+    """
+    override = os.environ.get("MERIDIAN_BENCH_ID", "").strip()
+    if override:
+        if "/" in override or "\\" in override or override in {".", ".."}:
+            raise SystemExit("MERIDIAN_BENCH_ID must be a single directory name")
+        return override
     if split == "hard":
         return "hard"
     return f"{split}-fix-{active_fix_version()}"

@@ -178,6 +178,184 @@ def test_report_states_false_fix_as_n_over_n() -> None:
     assert "No ground-truth severity" in text
 
 
+def test_outcome_categories_sum_to_the_run_count() -> None:
+    runs = [
+        {"run_key": "wall", "fault": "UNIT_MISMATCH", "wall_abort": True, "cases": []},
+        {
+            "run_key": "verified",
+            "fault": "UNIT_MISMATCH",
+            "cases": [{"verified": True, "kind": "DATA_REPAIR", "repaired_matches_clean": True}],
+        },
+        {
+            "run_key": "escalated",
+            "fault": "NULL_EXPLOSION",
+            "dataset": "vehicle_telemetry",
+            "seed": 201,
+            "intensity": 0.1,
+            "cases": [
+                {
+                    "verified": False,
+                    "escalated": True,
+                    "kind": "ESCALATE",
+                    "has_verdict": True,
+                    "critic_approved": False,
+                    "repaired_matches_clean": False,
+                }
+            ],
+        },
+        {
+            "run_key": "no-patch",
+            "fault": "UNIT_MISMATCH",
+            "cases": [{"verified": False, "kind": None}],
+        },
+        {
+            "run_key": "critic",
+            "fault": "UNIT_MISMATCH",
+            "cases": [
+                {
+                    "verified": False,
+                    "kind": "DATA_REPAIR",
+                    "has_verdict": True,
+                    "critic_approved": False,
+                    "repaired_matches_clean": False,
+                }
+            ],
+        },
+        {
+            "run_key": "fix-cap",
+            "fault": "UNIT_MISMATCH",
+            "structured": {"fix": {"n": 3, "ok": 3}},
+            "cases": [
+                {
+                    "verified": False,
+                    "kind": "DATA_REPAIR",
+                    "has_verdict": True,
+                    "critic_approved": True,
+                    "repaired_matches_clean": False,
+                }
+            ],
+        },
+        {
+            "run_key": "other",
+            "fault": "UNIT_MISMATCH",
+            "cases": [{"verified": False, "kind": "DATA_REPAIR", "has_verdict": False}],
+        },
+    ]
+    _text, summary = build_report(
+        runs,
+        meta={"split": "test", "commit": "abc", "forced_final": False},
+    )
+    categories = summary["outcomes"]["categories"]
+    assert sum(categories.values()) == len(runs) == summary["outcomes"]["N"]
+    assert categories["WALL_BUDGET"] == 1
+    assert categories["VERIFIED_AWAITING_APPROVAL"] == 1
+    assert categories["AGENT_ESCALATED"] == 1
+    assert categories["NO_PATCH"] == 1
+    assert categories["CRITIC_LIMIT"] == 1
+    assert categories["FIX_ATTEMPT_LIMIT"] == 1
+    assert categories["OTHER"] == 1
+    assert summary["critic"]["verifier_blocked_bad"] == 1
+    assert summary["evidence"]["exactly_one"]["N"] == 1
+    if summary["evidence"]["easy_evidence"]:
+        assert "easy evidence world" in _text
+
+
+def test_disclosures_reach_the_report_and_the_readme() -> None:
+    run = {
+        "run_key": "infra-one",
+        "fault": "SCHEMA_DRIFT",
+        "dataset": "vehicle_telemetry",
+        "seed": 201,
+        "intensity": 0.1,
+        "incidents": [{"fault": "SCHEMA_DRIFT"}],
+        "infra_faults": ["mcp_timeout"],
+        "infra_outcome_differs": False,
+        "cases": [
+            {
+                "severity": "SEV2",
+                "floor_raised": False,
+                "verified": False,
+                "kind": "DATA_REPAIR",
+                "has_verdict": True,
+                "critic_approved": True,
+                "repaired_matches_clean": True,
+            }
+        ],
+        "machine_time_s": 1.0,
+        "wall_s": 1.0,
+        "usd": 0.0,
+    }
+    text, summary = build_report(
+        [run],
+        meta={
+            "split": "test",
+            "commit": "abc",
+            "forced_final": False,
+            "label": "dirty-tree run, superseded",
+            "mixed_version": True,
+            "started_dirty": False,
+        },
+        comparisons=[("dev-fix-v1", {"fix": {}, "root_cause": {}, "ops": {}})],
+    )
+    assert "dirty-tree run, superseded" in text
+    assert "mixed-version test run" in text
+    assert "`infra-one`: mcp_timeout; outcome_differs=False" in text
+    readme = render_readme_results(summary)
+    blocked = summary["critic"]["verifier_blocked_bad"]
+    assert "This is a synthetic benchmark." in readme
+    assert "mixed-version test run" in readme
+    assert "started from a dirty tree" not in readme
+    assert "dev-fix-v1" in readme
+    assert f"{blocked} bad patches approved by the LLM critic were" in readme
+    noted = {
+        **summary,
+        "evidence": {
+            **summary["evidence"],
+            "note": "causal accuracy reflects an easy evidence world",
+        },
+    }
+    assert "easy evidence world" in render_readme_results(noted)
+    sparse = render_readme_results(
+        {
+            "detection_recall": {"text": "0/0"},
+            "hard_fp": {"text": "0/0"},
+            "fix": {},
+            "root_cause": {},
+            "ops": {},
+            "critic": {"matrix": None},
+            "integrity": {},
+            "evidence": {},
+        }
+    )
+    assert "| critic confusion matrix | n/a |" in sparse
+    assert "Outcome breakdown" not in sparse
+    assert "Safety comes from the deterministic verifier:" not in sparse
+
+
+def test_outcome_categories_refuse_a_count_that_is_not_n(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "meridian.bench.report._outcome",
+        lambda _run: ("NOT_A_CATEGORY", ""),
+    )
+    with pytest.raises(RuntimeError, match="not 1"):
+        build_report(
+            [{"fault": "UNIT_MISMATCH"}],
+            meta={"split": "dev", "commit": "abc", "forced_final": False},
+        )
+
+
+def test_bench_id_override_is_a_single_directory_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    from meridian.bench.harness import bench_id
+
+    monkeypatch.setenv("MERIDIAN_BENCH_ID", "test-fix-v2-clean")
+    assert bench_id("test") == "test-fix-v2-clean"
+    monkeypatch.setenv("MERIDIAN_BENCH_ID", "../elsewhere")
+    with pytest.raises(SystemExit, match="single directory"):
+        bench_id("test")
+
+
 def test_bench_gate_does_not_apply(tmp_path: Path) -> None:
     gateway = RecordingGateway(MessageLog(tmp_path / "messages"))
     ports = ApprovalPorts(

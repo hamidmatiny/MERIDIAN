@@ -4,6 +4,20 @@ import math
 from collections import Counter
 from typing import Any
 
+from meridian.contracts.fault_type import FaultType
+from meridian.contracts.incident_case import MAX_FIX_ATTEMPTS
+from meridian.injector.events import build_events
+
+_OUTCOMES = (
+    "VERIFIED_AWAITING_APPROVAL",
+    "AGENT_ESCALATED",
+    "CRITIC_LIMIT",
+    "FIX_ATTEMPT_LIMIT",
+    "WALL_BUDGET",
+    "NO_PATCH",
+    "OTHER",
+)
+
 
 def build_report(
     runs: list[dict[str, Any]],
@@ -25,7 +39,9 @@ def build_report(
         "triage": _triage(injected),
         "root_cause": _root(injected),
         "fix": _fix(injected),
+        "outcomes": _outcomes(runs),
         "critic": _critic(injected),
+        "evidence": _evidence(injected),
         "ops": _ops(runs),
         "infra": _infra(runs),
         "forced_final": bool(meta.get("forced_final")),
@@ -176,13 +192,94 @@ def _critic(runs: list[dict[str, Any]]) -> dict[str, Any]:
             matrix["rejected_good" if good else "rejected_bad"] += 1
     degraded = sum(1 for case in verdicts if case.get("critic_degraded"))
     corrective = sum(1 for case in verdicts if case.get("critic_corrective"))
+    bad = matrix["approved_bad"] + matrix["rejected_bad"]
+    approved = matrix["approved_good"] + matrix["approved_bad"]
+    blocked = sum(
+        1
+        for case in _cases(runs)
+        if case.get("critic_approved") is True
+        and case.get("repaired_matches_clean") is False
+        and not case.get("verified")
+    )
     return {
         "matrix": matrix,
         "degraded": _ratio(degraded, len(verdicts)),
         "corrective": _ratio(corrective, len(verdicts)),
         "unscored": len(verdicts) - len(rows),
+        "bad_patch_catch_rate": _ratio(matrix["rejected_bad"], bad),
+        "approval_precision": _ratio(matrix["approved_good"], approved),
+        "verifier_blocked_bad": blocked,
         "good_means": "repaired_matches_clean from score_fix",
     }
+
+
+def _outcomes(runs: list[dict[str, Any]]) -> dict[str, Any]:
+    """One category per run. The counts sum to the number of runs."""
+    counts: Counter[str] = Counter()
+    reasons: list[dict[str, str]] = []
+    for run in runs:
+        name, reason = _outcome(run)
+        counts[name] += 1
+        if name == "OTHER":
+            reasons.append({"run_key": str(run.get("run_key")), "reason": reason})
+    categories = {name: counts[name] for name in _OUTCOMES}
+    total = sum(categories.values())
+    if total != len(runs):
+        raise RuntimeError(f"outcome categories sum to {total}, not {len(runs)}")
+    return {"N": len(runs), "categories": categories, "other": reasons}
+
+
+def _outcome(run: dict[str, Any]) -> tuple[str, str]:
+    if run.get("wall_abort") or "WALL_BUDGET" in str(run.get("abort_reason") or ""):
+        return "WALL_BUDGET", ""
+    cases = list(run.get("cases") or [])
+    if any(case.get("verified") for case in cases):
+        return "VERIFIED_AWAITING_APPROVAL", ""
+    if any(case.get("escalated") for case in cases):
+        return "AGENT_ESCALATED", ""
+    if cases and all(case.get("kind") is None for case in cases):
+        return "NO_PATCH", ""
+    if any(case.get("has_verdict") and case.get("critic_approved") is False for case in cases):
+        return "CRITIC_LIMIT", ""
+    fix_calls = int(((run.get("structured") or {}).get("fix") or {}).get("n") or 0)
+    if fix_calls >= MAX_FIX_ATTEMPTS:
+        return "FIX_ATTEMPT_LIMIT", ""
+    if not cases:
+        return "OTHER", str(run.get("abort_reason") or "no incident")
+    return "OTHER", str(run.get("abort_reason") or "stopped without a limit signal")
+
+
+def _evidence(runs: list[dict[str, Any]]) -> dict[str, Any]:
+    """How many log events share the causal event's kind and dataset."""
+    counts: Counter[int] = Counter()
+    for run in runs:
+        if not run.get("fault") or run.get("seed") is None or run.get("intensity") is None:
+            continue
+        counts[_candidate_count(run)] += 1
+    total = sum(counts.values())
+    exactly_one = counts.get(1, 0)
+    easy = total > 0 and exactly_one * 2 > total
+    note = "causal accuracy reflects an easy evidence world" if easy else ""
+    return {
+        "distribution": {str(count): counts[count] for count in sorted(counts)},
+        "exactly_one": _ratio(exactly_one, total),
+        "easy_evidence": easy,
+        "note": note,
+    }
+
+
+def _candidate_count(run: dict[str, Any]) -> int:
+    events, causal_id = build_events(
+        dataset=str(run["dataset"]),
+        seed=int(run["seed"]),
+        fault=FaultType(str(run["fault"])),
+        columns=["column"],
+        intensity=float(run["intensity"]),
+    )
+    causal = next(event for event in events if event.id == causal_id)
+    return sum(
+        1 for event in events if event.kind == causal.kind and event.dataset == causal.dataset
+    )
 
 
 def _ops(runs: list[dict[str, Any]]) -> dict[str, Any]:
@@ -259,6 +356,7 @@ def _integrity(meta: dict[str, Any]) -> dict[str, Any]:
         "mixed_version": bool(meta.get("mixed_version")),
         "started_dirty": bool(meta.get("started_dirty")),
         "hard_mode_fp": meta.get("hard_mode_fp"),
+        "label": meta.get("label") or "",
     }
 
 
@@ -336,6 +434,7 @@ def _markdown(summary: dict[str, Any], comparisons: list[tuple[str, dict[str, An
             f"{_show(summary['root_cause']['guardrail_false_negative'])}",
             f"- mean columns_jaccard: {summary['root_cause']['mean_columns_jaccard']}",
             f"- mean grounding violations: {summary['root_cause']['mean_grounding_violations']}",
+            _evidence_line(summary["evidence"]),
             "",
             "## Fix",
             "",
@@ -346,6 +445,10 @@ def _markdown(summary: dict[str, Any], comparisons: list[tuple[str, dict[str, An
             f"{_show(summary['fix']['repaired_matches_clean_among_verified'])}",
             f"- FALSE-FIX RATE: {_show(summary['fix']['false_fix'])}",
             f"- match not re-scored: {summary['fix']['match_not_rescored']}",
+            "",
+            "## Outcomes",
+            "",
+            _outcome_lines(summary["outcomes"]),
             "",
             "## Infra",
             "",
@@ -363,6 +466,10 @@ def _markdown(summary: dict[str, Any], comparisons: list[tuple[str, dict[str, An
             f"- degraded: {_show(summary['critic']['degraded'])}",
             f"- corrective: {_show(summary['critic']['corrective'])}",
             f"- verdicts with no re-scored match: {summary['critic']['unscored']}",
+            f"- bad-patch catch rate: {_show(summary['critic']['bad_patch_catch_rate'])}",
+            f"- approval precision: {_show(summary['critic']['approval_precision'])}",
+            "- bad approved patches blocked by the verifier: "
+            f"{summary['critic']['verifier_blocked_bad']}",
             "",
             "## Ops",
             "",
@@ -447,9 +554,31 @@ def _matrix(matrix: dict[str, int]) -> str:
     )
 
 
+def _outcome_lines(outcomes: dict[str, Any]) -> str:
+    categories = outcomes["categories"]
+    lines = [f"- {name}: {categories[name]}" for name in _OUTCOMES]
+    lines.append(f"- sum: {outcomes['N']}")
+    for item in outcomes["other"]:
+        lines.append(f"- OTHER `{item['run_key']}`: {item['reason']}")
+    return "\n".join(lines)
+
+
+def _evidence_line(evidence: dict[str, Any]) -> str:
+    lines = [
+        f"- evidence candidates by kind and dataset: `{evidence['distribution']}`",
+        f"- runs with exactly one candidate: {_show(evidence['exactly_one'])}",
+    ]
+    if evidence.get("note"):
+        lines.append(f"- {evidence['note']}")
+    return "\n".join(lines)
+
+
 def _integrity_lines(summary: dict[str, Any]) -> list[str]:
     info = summary.get("integrity") or {}
     lines: list[str] = []
+    label = info.get("label")
+    if label:
+        lines.append(f"- {label}")
     digest = info.get("scorer_sha256")
     parent = info.get("scorer_parent_commit")
     if digest:
@@ -485,21 +614,32 @@ def _matrix_cell(matrix: object) -> str:
 
 
 def render_readme_results(summary: dict[str, Any]) -> str:
-    """README Results copied from the test summary. No number is introduced here."""
+    """README Results copied from one summary. No number is introduced here."""
     head = _headline(summary)
     integrity = summary.get("integrity") or {}
+    critic = summary.get("critic") or {}
+    evidence = summary.get("evidence") or {}
     lines = [
         "## Results",
         "",
-        "Numbers below are copied from `bench/results/test-fix-v2/summary.json`. "
-        "The full write-up is "
-        "[bench/results/test-fix-v2/REPORT.md](bench/results/test-fix-v2/REPORT.md).",
+        "This is a synthetic benchmark.",
         "",
-        "Every score was computed by scorer version "
-        f"`{integrity.get('scorer_sha256')}` of src/meridian/bench/score_fix.py "
-        f"(parent commit `{integrity.get('scorer_parent_commit')}`).",
+        "Numbers below are copied from `bench/results/test-fix-v2-clean/summary.json`. "
+        "The full write-up is "
+        "[bench/results/test-fix-v2-clean/REPORT.md](bench/results/test-fix-v2-clean/REPORT.md).",
+        "",
+        "The earlier run in "
+        "[bench/results/test-fix-v2/REPORT.md](bench/results/test-fix-v2/REPORT.md) "
+        "is a dirty-tree run, superseded.",
         "",
     ]
+    if integrity.get("scorer_sha256"):
+        lines.append(
+            "Every score was computed by scorer version "
+            f"`{integrity.get('scorer_sha256')}` of src/meridian/bench/score_fix.py "
+            f"(parent commit `{integrity.get('scorer_parent_commit')}`)."
+        )
+        lines.append("")
     if integrity.get("mixed_version"):
         lines.append("mixed-version test run")
         lines.append("")
@@ -524,12 +664,37 @@ def render_readme_results(summary: dict[str, Any]) -> str:
             f"| machine time p95 | {head['machine_time_p95']} |",
             f"| USD per run | {head['usd_per_run']} |",
             "",
-            "Dev versus test, from the comparisons stored on the test summary:",
-            "",
-            _readme_comparison(summary),
-            "",
         ]
     )
+    outcomes = summary.get("outcomes")
+    if outcomes:
+        lines.extend(["## Outcome breakdown", "", _outcome_lines(outcomes), ""])
+    if critic.get("bad_patch_catch_rate") is not None:
+        blocked = critic.get("verifier_blocked_bad")
+        lines.extend(
+            [
+                f"- bad-patch catch rate: {_show(critic.get('bad_patch_catch_rate'))}",
+                f"- approval precision: {_show(critic.get('approval_precision'))}",
+                "Safety comes from the deterministic verifier: "
+                f"{blocked} bad patches approved by the LLM critic were "
+                "blocked before reaching a human.",
+                "",
+            ]
+        )
+    if evidence.get("note"):
+        lines.append(str(evidence["note"]))
+        lines.append(f"- evidence distribution: `{evidence.get('distribution')}`")
+        lines.append(f"- exactly one candidate: {_show(evidence.get('exactly_one'))}")
+        lines.append("")
+    if summary.get("comparisons"):
+        lines.extend(
+            [
+                "Dev versus test, from the comparisons stored on the test summary:",
+                "",
+                _readme_comparison(summary),
+                "",
+            ]
+        )
     return "\n".join(lines)
 
 

@@ -112,6 +112,16 @@
     }
   ],
   "critic": {
+    "approval_precision": {
+      "N": 52,
+      "n": 38,
+      "text": "38/52"
+    },
+    "bad_patch_catch_rate": {
+      "N": 20,
+      "n": 6,
+      "text": "6/20"
+    },
     "corrective": {
       "N": 59,
       "n": 3,
@@ -129,7 +139,8 @@
       "rejected_bad": 6,
       "rejected_good": 1
     },
-    "unscored": 0
+    "unscored": 0,
+    "verifier_blocked_bad": 14
   },
   "detection_by_dataset": {
     "fleet_daily_kpi": {
@@ -236,6 +247,19 @@
     "n": 72,
     "text": "72/72"
   },
+  "evidence": {
+    "distribution": {
+      "1": 48,
+      "2": 24
+    },
+    "easy_evidence": true,
+    "exactly_one": {
+      "N": 72,
+      "n": 48,
+      "text": "48/72"
+    },
+    "note": "causal accuracy reflects an easy evidence world"
+  },
   "fix": {
     "escalation": {
       "N": 72,
@@ -322,6 +346,7 @@
       "n": 0,
       "text": "0/30"
     },
+    "label": "dirty-tree run, superseded",
     "mixed_version": false,
     "scorer_parent_commit": "7edbd177c37080edc435cc43df11831aa22b8a20",
     "scorer_sha256": "52154d863706cae02ee103a6b54081314321bf852a95b2d3a3eeb8f15a718c35",
@@ -336,6 +361,7 @@
       "n": 0,
       "text": "0/30"
     },
+    "label": "dirty-tree run, superseded",
     "mixed_version": false,
     "models": {
       "critic": "gemma4:12b",
@@ -415,6 +441,19 @@
     },
     "wall_p50": 266.0083219580047,
     "wall_p95": 673.0155979999981
+  },
+  "outcomes": {
+    "N": 72,
+    "categories": {
+      "AGENT_ESCALATED": 15,
+      "CRITIC_LIMIT": 1,
+      "FIX_ATTEMPT_LIMIT": 27,
+      "NO_PATCH": 0,
+      "OTHER": 0,
+      "VERIFIED_AWAITING_APPROVAL": 27,
+      "WALL_BUDGET": 2
+    },
+    "other": []
   },
   "root_cause": {
     "causal_event_correct": {
