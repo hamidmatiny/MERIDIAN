@@ -1,0 +1,23 @@
+{
+  "abort_reason": "",
+  "applied": false,
+  "cases": [],
+  "completed": true,
+  "dataset": "trip_summary",
+  "decision": "BENCH_NO_HUMAN",
+  "fault": null,
+  "incidents": [],
+  "input_tokens": 0,
+  "intensity": null,
+  "machine_time_s": null,
+  "node_latency_ms": {},
+  "output_tokens": 0,
+  "run_key": "trip_summary__clean__s304",
+  "seed": 304,
+  "split": "hard",
+  "structured": {},
+  "timeouts": 0,
+  "usd": 0.0,
+  "wall_abort": false,
+  "wall_s": 7.5653048749954905
+}

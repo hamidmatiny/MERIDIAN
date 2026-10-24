@@ -1,146 +1,68 @@
 # MERIDIAN
 
-MERIDIAN is being built to detect data-quality failures, explain them, propose a fix, verify that fix against the failing data, and ask a human in Slack before anything merges. The path is a fixed LangGraph state machine. The goal is to shorten the time from incident to a verified, approved fix.
+[![CI](https://github.com/hamidmatiny/MERIDIAN/actions/workflows/ci.yml/badge.svg)](https://github.com/hamidmatiny/MERIDIAN/actions/workflows/ci.yml)
 
-This repository has Phases 0 through 6: contracts, the injector, Sentinel → Triage, root cause, the Fix → Critic → Verifier loop, Slack approval and the postmortem, and MERIDIAN-Bench. Phase 7 is not started. The run wall budget starts when the CLI process starts, and a watchdog aborts a blocked call. Unit tests do not call a model or Slack.
+MERIDIAN detects a data-quality failure, names a cause, proposes a patch, and checks that patch by replaying the failing partition. A human approves in Slack, or at the terminal in the demo, before anything is applied. The path is a fixed LangGraph state machine. The published bench numbers below are copied from the summary files, and the free tier is the default.
 
-## Target agent graph
+## Architecture
 
-Sentinel through the verifier are implemented. A verified patch waits on Slack. An escalation posts an acknowledge-only message. Every finished case gets a postmortem. Nothing is applied until an allowed person clicks Approve.
+Sentinel fans out one case per incident. Fix and Critic may loop three times. A failed verification returns to Fix until three fix attempts, then the case escalates. The verifier is deterministic. The Slack gate interrupts the graph. Nothing is applied until an allowed person approves.
 
 ```mermaid
 flowchart TD
   sentinel[Sentinel]
   triage[Triage]
+  dispatch[Dispatch]
   rootCause[RootCause]
   fix[Fix]
+  preCritic[PreCritic]
   critic[Critic]
   verifier[Verifier]
   slack[SlackApproval]
   applyNode[Apply]
   postmortem[Postmortem]
 
-  sentinel --> triage --> rootCause --> fix --> critic
+  sentinel --> triage --> dispatch --> rootCause --> fix --> preCritic --> critic
   critic -->|"approved"| verifier
-  critic -->|"rejected, critic_rounds under 3"| fix
+  critic -->|"rejected, critic rounds under 3"| fix
   critic -->|"rejected on round 3, or ESCALATE"| slack
   verifier -->|"passed"| slack
-  verifier -->|"failed, fix_attempts under 3"| fix
-  verifier -->|"failed on attempt 3, or escalated"| slack
+  verifier -->|"failed, fix attempts under 3"| fix
+  verifier -->|"failed on attempt 3"| slack
   slack -->|"APPROVED"| applyNode --> postmortem
   slack -->|"REJECTED, TIMEOUT, or ACKNOWLEDGED"| postmortem
-
-  classDef built fill:#d9ead3,stroke:#38761d
-  classDef planned fill:#f3f3f3,stroke:#999
-  class sentinel,triage,rootCause,fix,critic,verifier,slack,applyNode,postmortem built
 ```
 
-| Node | Planned role |
+| Node | Role |
 | --- | --- |
 | Sentinel | Run pandera contracts over partitions on Ray and emit an `Incident`. |
-| Triage | Claude assigns severity and blast radius. |
-| RootCause | Claude, with MCP tools, writes a `Hypothesis` and evidence. |
-| Fix | Claude writes a `Patch`: `DATA_REPAIR`, `QUARANTINE`, `RERUN_UPSTREAM`, or `ESCALATE`. |
-| Critic | Grok reviews the patch. Objections are typed. Three rejections escalate. |
-| Verifier | Ray replays the partition in a sandbox. Pass/fail does not use a label. |
+| Triage | Assign severity and blast radius. |
+| RootCause | Read lineage, partitions, and history, then write a `Hypothesis` with evidence. |
+| Fix | Write a `Patch`: `DATA_REPAIR`, `QUARANTINE`, `RERUN_UPSTREAM`, or `ESCALATE`, plus a regression check. |
+| Critic | Review the patch. Three rejections escalate. |
+| Verifier | Replay the partition in a sandbox. Pass and fail do not use a label. |
 | SlackApproval | LangGraph interrupt. A human approves, rejects, or the request times out. |
 | Postmortem | Write the incident report. |
 
-## MCP tools
+## Try it in 90 seconds
 
-Root cause may call these. Each response is a Pydantic model with a stable `ref`. The tools only read.
-
-| Tool | Returns | Ref |
-| --- | --- | --- |
-| `get_upstream` | Datasets that feed this one | `lineage:upstream:<dataset>` |
-| `get_downstream` | Datasets this one feeds | `lineage:downstream:<dataset>` |
-| `get_contract` | Pandera column names and named checks | `contract:<dataset>` |
-| `describe_partition` | Dtypes and null rates | `partition:<path>`, `column:<path>:<column>` |
-| `compare_to_reference` | PSI and null rate per profiled column | `psi:<dataset>`, `psi:<dataset>:<column>` |
-| `sample_failures` | Up to 20 stored sample rows | `sample:<incident_id>` |
-| `list_events` | Change events, with optional filters | `events:<dataset>`, `event:<id>` |
-| `get_event` | One change event | `event:<id>` |
-
-A citation survives only when that ref came back from a tool in the same case. `MERIDIAN_ROOTCAUSE_MAX_TOOL_CALLS` defaults to 8.
-
-Loop limits, enforced on each `IncidentCase`: a critic rejection under round 3 returns to Fix. Round 3 escalates. A failed verification under 3 Fix executions returns to Fix. The third failure escalates. `fix_attempts` counts Fix executions, so the cap is 3.
-
-## Phases
-
-| Phase | Scope | Status |
-| --- | --- | --- |
-| 0 | Repository, ADRs, Pydantic contracts, CI | done |
-| 1 | Pandera contracts and an incident injector | done |
-| 2 | Graph skeleton: Sentinel to Triage | done |
-| 3 | RootCause agent with MCP tools | done |
-| 4 | Fix, Critic, and Verifier loop on Ray | done |
-| 5 | Slack approval gate and Postmortem | done |
-| 6 | MERIDIAN-Bench harness and published results | done |
-| 7 | OpenTelemetry, cost tracking, Docker Compose demo | planned |
-
-## What is in this tree
-
-- `src/meridian/contracts/` — frozen Pydantic models. A run is `MeridianState`: partitions, `llm_calls`, `tool_calls`, and one `IncidentCase` per incident.
-- `src/meridian/pipeline/` — seeded generators for the three fleet datasets, plus `lineage.yaml`.
-- `src/meridian/quality/` — pandera models, PSI, the freshness SLA, and `evaluate`, which returns `Incident` records.
-- `src/meridian/agents/` — Sentinel on Ray, Triage, the bounded root-cause tool loop, Fix, Critic, and the deterministic Verifier.
-- `src/meridian/sandbox/` — AST gate and the Ray task that runs a remediation.
-- `src/meridian/mcp_servers/` — read-only lineage, data, and history tools.
-- `src/meridian/graph/` — one branch per incident: triage, root cause, then Fix, Critic, and Verifier inside the caps above. The checkpointer is still SQLite.
-- `src/meridian/prompts/` — `triage.v1.md`, `root_cause.v1.md`, `fix.v1.md`, `fix.v2.md`, and `critic.v1.md`.
-- `src/meridian/bench/` — the harness, the hard-mode generator, and the scorers. Published numbers are in `bench/results/`.
-- `src/meridian/run.py` — `python -m meridian.run`. `--fake-llm` is the default. `--live` calls Claude for triage, root cause, and fix, and Grok for the critic.
-- `src/meridian/injector/` — one injector per fault type, the seeded `events.jsonl` log, and the `python -m meridian.injector` CLI.
-- `src/meridian/config.py` — settings loaded from the environment and `.env`. Missing keys do not crash import. `Settings.require_anthropic()`, `Settings.require_xai()`, and `Settings.require_slack()` raise when a caller actually needs those credentials. `--live` asks for Anthropic, then the four model names, then xAI.
-- `schemas/` — JSON Schema generated from the contracts.
-- `src/meridian/slack/` — Block Kit, the approval interrupt, apply-to-directory, and the postmortem.
-- `src/meridian/slack_app.py` — `python -m meridian.slack_app`. Socket Mode and the graph worker.
-- `docs/adr/` — ADR-001 through ADR-034.
-- `.github/workflows/ci.yml` — the checks below.
-
-Generated Parquet under `data/` is gitignored.
-
-## Fault catalog
-
-| Fault | How it is injected | Check that catches it |
-| --- | --- | --- |
-| `SCHEMA_DRIFT` | Intensity below 0.1 retypes the first key column, below 0.5 renames it, and 0.5 and above drops it. | Column presence and dtype (`column_in_dataframe`, `column_in_schema`, `wrong_dtype`). |
-| `NULL_EXPLOSION` | Nulls that fraction of a non-nullable, non-key column. | `not_nullable`. |
-| `UNIT_MISMATCH` | Multiplies that fraction of rows by 3.6 on m/s columns, or by 1000 on kilometres. | Range checks, and `speed_matches_distance` on trips. |
-| `DUPLICATE_KEYS` | Appends copies of that fraction of rows, repeating the primary key. | `multiple_fields_uniqueness`. |
-| `LATE_PARTITION` | Leaves the frame unchanged and moves arrival past the 2 hour SLA. The offset grows with intensity and is always late. | `partition_arrival_sla` on `PartitionMetadata`. |
-| `DISTRIBUTION_SHIFT` | Power-warps the PSI column inside its generating range (`u ** (1 + 100 * intensity)`). On trips, distance is recomputed so the speed identity still holds. Legal ranges still hold. | PSI against a quantile profile fit on a separate clean partition. Threshold 0.2. |
-
-## Quickstart
-
-Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+No Slack workspace, no Ollama, and no API key.
 
 ```bash
 uv sync
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy --strict src
-uv run pytest --cov=src/meridian --cov-fail-under=95 -q -m "not live"
-uv run python scripts/export_schemas.py && test -z "$(git status --porcelain schemas/)"
-uv run python -m meridian.run --dataset vehicle_telemetry --fault SCHEMA_DRIFT --intensity 0.3 --seed 42 --fake-llm
-uv run python -m meridian.run --dataset fleet_daily_kpi --fault NULL_EXPLOSION --intensity 0.0 --seed 7 --fake-llm
+uv run python -m meridian.demo
 ```
 
-Copy `.env.example` to `.env` only when a later phase needs credentials. Phase 0 tests do not call external services.
+The first line is `fake models: demonstrates the pipeline, not model quality`. The demo injects `UNIT_MISMATCH` and `NULL_EXPLOSION`, runs the graph, and asks `approve` or `reject` in the terminal. A non-interactive shell approves. Applied patches and the postmortem land under `data/demo/`.
 
-## Slack setup
+`make demo`, `make test`, `make bench-dev`, and `make verify-audit` wrap the same commands.
 
-Create a Slack app on the workspace and invite the bot to the approval channel.
+```bash
+docker compose up -d
+docker compose logs meridian
+```
 
-Scopes for the bot token: `chat:write`, `channels:read`, `users:read`, `files:write`, `app_mentions:read`.
-
-Event Subscriptions: turn them on, subscribe the bot to `app_mention`, and reinstall the app after that change. Socket Mode must be on (`SLACK_APP_TOKEN` is an `xapp-` token). Interactivity must be on so the Approve, Reject, and Acknowledge buttons work.
-
-`MERIDIAN_SLACK_APPROVERS` is a comma-separated list of Slack user ids. Anyone else gets an ephemeral "not authorized" and the case does not change. `MERIDIAN_APPROVAL_TIMEOUT_S` defaults to 86400. A timeout marks the case `needs_human` and does not apply the patch.
-
-Mention the bot by its user id, not by display name: `@bot status` lists open cases, `@bot help` lists the commands.
-
-`python -m meridian.slack_app` runs the socket and the worker. `python -m meridian.run --slack` posts the request and returns. The click resumes the checkpoint.
+Open the Jaeger UI at [http://localhost:16686](http://localhost:16686) and look for the `meridian` service. Postgres holds the audit chain for that run. Live mode, when you choose it, reaches Ollama on the host at `http://host.docker.internal:11434`. Ollama itself is not containerized on macOS. The container sets `MERIDIAN_SANDBOX_RLIMIT=0`: on Linux the address-space cap stops a Ray worker from starting, and macOS does not apply that cap.
 
 ## Results
 
@@ -153,7 +75,7 @@ The earlier run in [bench/results/test-fix-v2/REPORT.md](bench/results/test-fix-
 | metric | value |
 | --- | --- |
 | detection recall | 72/72 |
-| hard-mode FP rate | 0/0 |
+| hard-mode FP rate | 0/30 |
 | raw causal accuracy | 71/72 |
 | guarded causal accuracy | 71/72 |
 | kind_appropriate | 68/72 |
@@ -164,6 +86,8 @@ The earlier run in [bench/results/test-fix-v2/REPORT.md](bench/results/test-fix-
 | machine time p50 | 288.367448 |
 | machine time p95 | 498.95234 |
 | USD per run | 0.0 |
+
+Hard-mode FP is copied from `bench/results/hard-clean/summary.json` at commit `7e7f9f5e80eb1a0ebf779b6bc815be7a52b40afa`.
 
 ## Outcome breakdown
 
@@ -198,6 +122,104 @@ Dev versus test, from the comparisons stored on the test summary:
 | machine_time_p50 | 241.808319 | 301.392669 | 288.367448 |
 | machine_time_p95 | 317.57882 | 412.32216 | 498.95234 |
 | usd_per_run | 0.0 | 0.0 | 0.0 |
+
+## Limitations
+
+- synthetic benchmark
+- easy evidence world (48/72 single candidate)
+- FIX_ATTEMPT_LIMIT is the dominant failure (26/72)
+- local models only
+- sandbox limits on macOS
+
+The test-split numbers were recorded at commit `c56af95d45cedb380a803d820a5d2dd4058fc422` and are stored in `bench/results/test-fix-v2-clean/summary.json`. `LOCK.json` for the hard split records `dirty: false`.
+
+## Live setup
+
+Copy `.env.example` to `.env`.
+
+Ollama is the free-tier default. `OLLAMA_BASE_URL` defaults to `http://localhost:11434`. Inside Compose, point it at `http://host.docker.internal:11434`. The pinned local models are `qwen3.5:27b-q4_K_M` for triage, root cause, and fix, and `gemma4:12b` for the critic.
+
+OmniRoute is optional. It is a local proxy in front of a free remote model. Leave it unset and the run stays on Ollama.
+
+Slack: create an app, invite the bot to the approval channel, and set `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, and `MERIDIAN_SLACK_APPROVERS`. Bot scopes: `chat:write`, `channels:read`, `users:read`, `files:write`, `app_mentions:read`. Subscribe to `app_mention`. Socket Mode and Interactivity must be on. Mention the bot by its user id. `python -m meridian.slack_app` runs the socket and the worker. `python -m meridian.run --slack` posts the request and returns.
+
+```bash
+uv run python -m meridian.run --dataset vehicle_telemetry --fault SCHEMA_DRIFT --intensity 0.3 --seed 42 --fake-llm
+uv run python -m meridian.audit verify
+uv run python -m meridian.spend
+```
+
+## Cost
+
+The published runs cost $0.00. That is the free tier: local Ollama, or a free remote model through OmniRoute. Paid providers run only when `MERIDIAN_ALLOW_PAID=1` and a USD cap is set. The example caps are `MERIDIAN_MAX_USD_PER_RUN=0.25` and `MERIDIAN_MAX_USD_PER_DAY=1.00`. A billing, auth, or quota error stops the run. `python -m meridian.spend` prints the paid total.
+
+## Phases
+
+| Phase | Scope | Status |
+| --- | --- | --- |
+| 0 | Repository, ADRs, Pydantic contracts, CI | done |
+| 1 | Pandera contracts and an incident injector | done |
+| 2 | Graph skeleton: Sentinel to Triage | done |
+| 3 | RootCause agent with MCP tools | done |
+| 4 | Fix, Critic, and Verifier loop on Ray | done |
+| 5 | Slack approval gate and Postmortem | done |
+| 6 | MERIDIAN-Bench harness and published results | done |
+| 7 | OpenTelemetry, the audit log, the demo, and this release | done |
+
+## ADR index
+
+| ADR | Decision |
+| --- | --- |
+| 001 | Deterministic LangGraph state machine |
+| 002 | Typed Pydantic contracts |
+| 003 | Cross-provider critic |
+| 004 | Human approval via Slack |
+| 005 | Deterministic verifier |
+| 006 | uv, ruff, and mypy |
+| 007 | Synthetic seeded pipeline |
+| 008 | PSI and check mapping |
+| 009 | Injected-fault ground truth |
+| 010 | One Ray task per partition |
+| 011 | Severity floor |
+| 012 | Versioned prompts and LLM accounting |
+| 013 | SQLite checkpoint |
+| 014 | Synthetic evidence world |
+| 015 | MCP read-only tools |
+| 016 | Grounding guardrail |
+| 017 | Bounded tool loop |
+| 018 | Remediation kinds |
+| 019 | Sandbox |
+| 020 | Critic objections |
+| 021 | Verifier versus bench scorer |
+| 022 | JSON Schema structured output |
+| 023 | Free-tier router |
+| 024 | Budget and circuit breaker |
+| 025 | Pre-critic dry run |
+| 026 | Submit tool |
+| 027 | Call limits |
+| 028 | Socket Mode and checkpoint resume |
+| 029 | Approver allowlist |
+| 030 | Apply to a directory |
+| 031 | Process wall watchdog |
+| 032 | Recorded timeline and Slack audit |
+| 033 | Bench design |
+| 034 | Hard-mode generator |
+| 035 | OpenTelemetry, off unless an exporter is configured |
+| 036 | Tamper-evident audit log |
+| 037 | One-command demo and Compose |
+| 038 | Pandera failures cross Ray as RuntimeError |
+
+## Checks
+
+```bash
+uv sync
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy --strict src
+uv run pytest --cov=src/meridian --cov-fail-under=95 -q -m "not live"
+uv run python -m meridian.demo
+uv run python scripts/export_schemas.py && test -z "$(git status --porcelain schemas/)"
+```
 
 ## License
 

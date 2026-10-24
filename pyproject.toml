@@ -1,11 +1,12 @@
 [project]
 name = "meridian"
-version = "0.1.0"
+version = "1.0.0"
 description = "Autonomous data-incident response system"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
+    "alembic>=1.14",
     "langchain-anthropic>=1.7.6",
     "langchain-core>=1.6.12",
     "langchain-ollama>=0.3.0",
@@ -15,6 +16,9 @@ dependencies = [
     "langgraph>=1.2.16",
     "langgraph-checkpoint-sqlite>=3.1.2",
     "mcp>=1.12,<2",
+    "opentelemetry-api>=1.27",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.27",
+    "opentelemetry-sdk>=1.27",
     "numpy>=1.24.4",
     "pandas>=2.1.1",
     "pandera>=0.34.1",
@@ -22,9 +26,11 @@ dependencies = [
     "pydantic>=2",
     "pydantic-settings>=2.16.0",
     "python-dotenv>=1.2.4",
+    "psycopg[binary]>=3.2",
     "pyyaml>=6.0.3",
     "ray>=2.59.0",
     "slack-bolt>=1.30.0",
+    "sqlalchemy>=2",
 ]
 
 [build-system]
@@ -55,7 +61,7 @@ dev = [
 target-version = "py311"
 line-length = 100
 src = ["src", "tests", "scripts"]
-extend-exclude = ["remediations"]
+extend-exclude = ["remediations", "alembic/script.py.mako"]
 
 [tool.ruff.lint]
 select = [

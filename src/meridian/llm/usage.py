@@ -71,7 +71,7 @@ def make_llm_call(
     loaded = _load_ms(raw)
     if loaded == 0:
         loaded = _whole(getattr(owner, "last_load_ms", 0))
-    return LLMCall(
+    call = LLMCall(
         node=node,
         model=chosen,
         provider=provider,
@@ -91,6 +91,42 @@ def make_llm_call(
         load_duration_ms=loaded,
         think=bool(getattr(owner, "think", False)),
         eval_count=_eval_count(raw),
+    )
+    _observe(call)
+    return call
+
+
+def _observe(call: LLMCall) -> None:
+    """Span and audit row. Neither stores the prompt."""
+    from meridian.audit.store import note
+    from meridian.tracing import note_llm
+
+    note_llm(
+        provider=call.provider,
+        model=call.model,
+        prompt_version=call.prompt_version,
+        input_tokens=call.input_tokens,
+        output_tokens=call.output_tokens,
+        latency_ms=call.latency_ms,
+        timed_out=call.timed_out,
+        think=call.think,
+        attempt=call.attempt,
+    )
+    note(
+        "llm_calls",
+        {
+            "node": call.node,
+            "provider": call.provider,
+            "model": call.model,
+            "prompt_version": call.prompt_version,
+            "input_tokens": call.input_tokens,
+            "output_tokens": call.output_tokens,
+            "latency_ms": call.latency_ms,
+            "timed_out": call.timed_out,
+            "think": call.think,
+            "attempt": call.attempt,
+            "succeeded": call.succeeded,
+        },
     )
 
 
@@ -119,24 +155,24 @@ def assemble_calls(
     for note in notes:
         if not isinstance(note, TimeoutNote):
             continue
-        prior.append(
-            LLMCall(
-                node=node,
-                model=note.model,
-                provider=note.provider,
-                prompt_version=prompt_version,
-                input_tokens=0,
-                output_tokens=0,
-                latency_ms=max(note.latency_ms, 0),
-                attempt=number,
-                succeeded=False,
-                structured=structured,
-                temperature=_float(getattr(owner, "temperature", 0.0)),
-                seed=_seed(getattr(owner, "seed", 42)),
-                timed_out=True,
-                think=bool(getattr(owner, "think", False)),
-            )
+        timed = LLMCall(
+            node=node,
+            model=note.model,
+            provider=note.provider,
+            prompt_version=prompt_version,
+            input_tokens=0,
+            output_tokens=0,
+            latency_ms=max(note.latency_ms, 0),
+            attempt=number,
+            succeeded=False,
+            structured=structured,
+            temperature=_float(getattr(owner, "temperature", 0.0)),
+            seed=_seed(getattr(owner, "seed", 42)),
+            timed_out=True,
+            think=bool(getattr(owner, "think", False)),
         )
+        prior.append(timed)
+        _observe(timed)
         number += 1
     primary = make_llm_call(
         node=node,

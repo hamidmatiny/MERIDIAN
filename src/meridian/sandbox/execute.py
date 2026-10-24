@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
+from pandera.errors import SchemaError, SchemaErrors
 
 from meridian.sandbox.gate import check_source
 
@@ -45,7 +46,7 @@ def execute(
     if reasons:
         return SandboxResult("rejected", "; ".join(reasons), None, 0, len(frame))
     payload = frame.to_parquet(index=False)
-    return _remote_call(
+    result = _remote_call(
         source,
         payload,
         entry,
@@ -55,6 +56,10 @@ def execute(
         allow_pandera=allow_pandera,
         rows_in=len(frame),
     )
+    from meridian.tracing import note_sandbox
+
+    note_sandbox(entry, result.kind, result.rows_in, result.rows_out)
+    return result
 
 
 def _remote_call(
@@ -125,6 +130,8 @@ def _worker(
                 raise RuntimeError("remediation did not return a dataframe")
             blob = out.to_parquet(index=False)
             return bytes(blob), len(out), rows_in
+    except (SchemaError, SchemaErrors) as exc:
+        raise RuntimeError(f"schema check failed: {exc}") from None
     finally:
         os.environ.clear()
         os.environ.update(saved)
@@ -158,7 +165,9 @@ def _limit_memory(memory_bytes: int) -> None:
 
 
 def _apply_limit(platform: str, memory_bytes: int) -> None:
-    if platform == "darwin":
+    import os
+
+    if platform == "darwin" or os.environ.get("MERIDIAN_SANDBOX_RLIMIT", "1") == "0":
         return
     import resource
 

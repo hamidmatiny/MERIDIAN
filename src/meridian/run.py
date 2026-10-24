@@ -77,8 +77,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.seed < 0:
         parser.error("seed must be >= 0")
     _configure_logging()
+    from meridian.audit.store import install_from_env
+    from meridian.tracing import enabled as tracing_enabled
+
     try:
         settings = get_settings()
+        install_from_env()
+        tracing_enabled()
     except MeridianConfigError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -566,10 +571,22 @@ def _invoke(
             )
             thread = {"configurable": {"thread_id": str(run_id)}}
             clock.disarm()
+            from meridian.audit.store import note
+            from meridian.tracing import run_span
+
             try:
-                result = graph.invoke(  # type: ignore[call-overload]
-                    MeridianState(run_id=run_id, partitions=[ref]),
-                    thread,
+                with run_span(str(run_id)):
+                    result = graph.invoke(  # type: ignore[call-overload]
+                        MeridianState(run_id=run_id, partitions=[ref]),
+                        thread,
+                    )
+                note(
+                    "runs",
+                    {
+                        "run_id": str(run_id),
+                        "dataset": ref.dataset,
+                        "partition_date": ref.partition_date.isoformat(),
+                    },
                 )
             except RunAborted as exc:
                 if exc.kind == "WALL_BUDGET":

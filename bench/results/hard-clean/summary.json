@@ -1,0 +1,325 @@
+{
+  "critic": {
+    "approval_precision": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "bad_patch_catch_rate": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "corrective": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "degraded": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "good_means": "repaired_matches_clean from score_fix",
+    "matrix": {
+      "approved_bad": 0,
+      "approved_good": 0,
+      "rejected_bad": 0,
+      "rejected_good": 0
+    },
+    "unscored": 0,
+    "verifier_blocked_bad": 0
+  },
+  "detection_by_dataset": {},
+  "detection_by_fault": {},
+  "detection_precision": {
+    "by_dataset": {},
+    "by_fault": {}
+  },
+  "detection_recall": {
+    "N": 0,
+    "n": 0,
+    "text": "0/0"
+  },
+  "evidence": {
+    "distribution": {},
+    "easy_evidence": false,
+    "exactly_one": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "note": ""
+  },
+  "fix": {
+    "escalation": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "false_fix": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "kind_appropriate": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "match_not_rescored": 0,
+    "repaired_matches_clean_among_verified": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "verified": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    }
+  },
+  "forced_final": false,
+  "hard_fp": {
+    "N": 30,
+    "incidents": 0,
+    "n": 0,
+    "text": "0/30"
+  },
+  "infra": {
+    "outcomes_differ": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "outcomes_unmeasured": 0,
+    "runs": [],
+    "runs_with_faults": {
+      "N": 30,
+      "n": 0,
+      "text": "0/30"
+    }
+  },
+  "integrity": {
+    "hard_mode_fp": null,
+    "label": "",
+    "mixed_version": false,
+    "scorer_parent_commit": null,
+    "scorer_sha256": null,
+    "started_dirty": false
+  },
+  "meta": {
+    "commit": "7e7f9f5e80eb1a0ebf779b6bc815be7a52b40afa",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "dirty": false,
+    "forced_final": false,
+    "models": {
+      "critic": "gemma4:12b",
+      "fix": "qwen3.5:27b-q4_K_M",
+      "root_cause": "qwen3.5:27b-q4_K_M",
+      "triage": "qwen3.5:27b-q4_K_M"
+    },
+    "ollama": "ollama version is 0.40.6",
+    "prompt_versions": {
+      "critic": "v1",
+      "fix": "v2",
+      "fix_default": "v1",
+      "root_cause": "v1",
+      "triage": "v1"
+    },
+    "seeds": [
+      301,
+      302,
+      303,
+      304,
+      305,
+      306,
+      307,
+      308,
+      309,
+      310
+    ],
+    "split": "hard"
+  },
+  "ops": {
+    "machine_time_n": 0,
+    "machine_time_p50": null,
+    "machine_time_p95": null,
+    "node_latency_ms": {},
+    "structured_success_rate": {},
+    "timeouts": 0,
+    "tokens_per_run": 0.0,
+    "usd_per_run": 0.0,
+    "usd_total": 0.0,
+    "wall_aborts": {
+      "N": 30,
+      "n": 0,
+      "text": "0/30"
+    },
+    "wall_p50": 7.3902656249993015,
+    "wall_p95": 8.611946874996647
+  },
+  "outcomes": {
+    "N": 30,
+    "categories": {
+      "AGENT_ESCALATED": 0,
+      "CRITIC_LIMIT": 0,
+      "FIX_ATTEMPT_LIMIT": 0,
+      "NO_PATCH": 0,
+      "OTHER": 30,
+      "VERIFIED_AWAITING_APPROVAL": 0,
+      "WALL_BUDGET": 0
+    },
+    "other": [
+      {
+        "reason": "no incident",
+        "run_key": "vehicle_telemetry__clean__s301"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "vehicle_telemetry__clean__s302"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "vehicle_telemetry__clean__s303"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "vehicle_telemetry__clean__s304"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "vehicle_telemetry__clean__s305"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "vehicle_telemetry__clean__s306"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "vehicle_telemetry__clean__s307"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "vehicle_telemetry__clean__s308"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "vehicle_telemetry__clean__s309"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "vehicle_telemetry__clean__s310"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "trip_summary__clean__s301"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "trip_summary__clean__s302"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "trip_summary__clean__s303"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "trip_summary__clean__s304"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "trip_summary__clean__s305"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "trip_summary__clean__s306"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "trip_summary__clean__s307"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "trip_summary__clean__s308"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "trip_summary__clean__s309"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "trip_summary__clean__s310"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "fleet_daily_kpi__clean__s301"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "fleet_daily_kpi__clean__s302"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "fleet_daily_kpi__clean__s303"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "fleet_daily_kpi__clean__s304"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "fleet_daily_kpi__clean__s305"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "fleet_daily_kpi__clean__s306"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "fleet_daily_kpi__clean__s307"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "fleet_daily_kpi__clean__s308"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "fleet_daily_kpi__clean__s309"
+      },
+      {
+        "reason": "no incident",
+        "run_key": "fleet_daily_kpi__clean__s310"
+      }
+    ]
+  },
+  "root_cause": {
+    "causal_event_correct": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "guardrail_false_negative": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "mean_columns_jaccard": null,
+    "mean_grounding_violations": null,
+    "raw_causal_correct": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    }
+  },
+  "runs": 30,
+  "triage": {
+    "distribution": {},
+    "floor_raise": {
+      "N": 0,
+      "n": 0,
+      "text": "0/0"
+    },
+    "note": "No ground-truth severity exists. This is not an accuracy."
+  }
+}

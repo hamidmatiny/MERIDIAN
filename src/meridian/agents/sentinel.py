@@ -31,9 +31,15 @@ def evaluate_partition(ref: PartitionRef, detected_at: datetime) -> list[Inciden
 
 
 def _remote_entry(ref_json: str, detected_at: str) -> list[str]:
-    ref = PartitionRef.model_validate_json(ref_json)
-    moment = datetime.fromisoformat(detected_at)
-    return [item.model_dump_json() for item in evaluate_partition(ref, moment)]
+    from pandera.errors import SchemaError, SchemaErrors
+
+    try:
+        ref = PartitionRef.model_validate_json(ref_json)
+        moment = datetime.fromisoformat(detected_at)
+        found = evaluate_partition(ref, moment)
+    except (SchemaError, SchemaErrors) as exc:
+        raise RuntimeError(f"schema check failed: {exc}") from None
+    return [item.model_dump_json() for item in found]
 
 
 _REMOTE = ray.remote(_remote_entry)

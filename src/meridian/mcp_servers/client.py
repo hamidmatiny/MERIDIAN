@@ -210,13 +210,24 @@ def _sync_tool(tool: BaseTool, owner: StdioSession, session: ClientSession) -> B
     )
 
 
+def _observe_tool(name: str, text: str) -> None:
+    from meridian.audit.store import note
+    from meridian.tracing import note_tool
+
+    refs = text.count("event:")
+    note_tool(name, refs)
+    note("tool_calls", {"tool": name, "ref_count": refs})
+
+
 def invoke_tool(tool: BaseTool, args: dict[str, Any]) -> str:
     """Call a tool and return its JSON text."""
     try:
         raw = tool.invoke(args)
     except NotImplementedError:
         raw = asyncio.run(tool.ainvoke(args))
-    return _tool_text(raw)
+    text = _tool_text(raw)
+    _observe_tool(str(getattr(tool, "name", "tool")), text)
+    return text
 
 
 def inprocess_tools(root: Path) -> list[BaseTool]:

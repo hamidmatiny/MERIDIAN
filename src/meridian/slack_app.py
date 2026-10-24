@@ -58,7 +58,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--log", default="data/slack_app.log")
     args = parser.parse_args(argv)
     configure_logging(Path(args.log))
+    from meridian.audit.store import install_from_env
+    from meridian.tracing import enabled as tracing_enabled
+
     settings = get_settings()
+    install_from_env()
+    tracing_enabled()
     try:
         settings.require_slack()
     except MeridianConfigError as exc:

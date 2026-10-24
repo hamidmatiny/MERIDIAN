@@ -96,7 +96,7 @@ class Settings(BaseSettings):
     )
     database_url: str | None = Field(
         default=None,
-        description="Postgres URL reserved for the audit log. Unused in Phase 0.",
+        description="Postgres URL for the tamper-evident audit log. Unset uses JSONL.",
     )
     triage_model: str | None = Field(
         default=None,

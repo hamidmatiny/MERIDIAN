@@ -47,14 +47,25 @@ def _claim(num_cpus: int) -> bool:
         if ray.is_initialized():
             return False
         os.environ["RAY_USAGE_STATS_ENABLED"] = "0"
+        store = os.environ.get("RAY_OBJECT_STORE_MEMORY", "").strip()
         try:
-            ray.init(
-                num_cpus=num_cpus,
-                include_dashboard=False,
-                logging_level=logging.ERROR,
-                ignore_reinit_error=True,
-                runtime_env=prepare_ray_runtime(),
-            )
+            if store:
+                ray.init(
+                    num_cpus=num_cpus,
+                    include_dashboard=False,
+                    logging_level=logging.ERROR,
+                    ignore_reinit_error=True,
+                    runtime_env=prepare_ray_runtime(),
+                    object_store_memory=int(store),
+                )
+            else:
+                ray.init(
+                    num_cpus=num_cpus,
+                    include_dashboard=False,
+                    logging_level=logging.ERROR,
+                    ignore_reinit_error=True,
+                    runtime_env=prepare_ray_runtime(),
+                )
         except AssertionError as exc:
             # A raced second init finds the driver already connected. Use that cluster.
             if "ray.init twice" not in str(exc) or not ray.is_initialized():

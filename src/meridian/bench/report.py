@@ -55,6 +55,40 @@ def build_report(
     return "\n".join(lines) + "\n", summary
 
 
+def _hard_headline(
+    integrity: dict[str, Any],
+    head: dict[str, Any],
+    hard: dict[str, Any] | None,
+) -> str:
+    if hard is not None:
+        field = (hard.get("headline") or {}).get("hard_fp") or hard.get("hard_fp") or {}
+        if isinstance(field, dict) and field.get("text"):
+            return str(field["text"])
+    value = integrity.get("hard_mode_fp") or head["hard_fp"]
+    return str(value)
+
+
+def render_limitations(summary: dict[str, Any]) -> str:
+    """Limitation lines whose counts come from the summary."""
+    categories = summary["outcomes"]["categories"]
+    evidence = summary["evidence"]
+    runs = int(summary["runs"])
+    one = evidence["exactly_one"]
+    single = one["text"] if isinstance(one, dict) else f"{one}/{runs}"
+    return "\n".join(
+        [
+            "- synthetic benchmark",
+            f"- easy evidence world ({single} single candidate)",
+            (
+                "- FIX_ATTEMPT_LIMIT is the dominant failure "
+                f"({categories['FIX_ATTEMPT_LIMIT']}/{runs})"
+            ),
+            "- local models only",
+            "- sandbox limits on macOS",
+        ]
+    )
+
+
 def _headline(summary: dict[str, Any]) -> dict[str, Any]:
     """The columns the README and the side-by-side table show."""
     fix = summary.get("fix", {})
@@ -613,7 +647,11 @@ def _matrix_cell(matrix: object) -> str:
     )
 
 
-def render_readme_results(summary: dict[str, Any]) -> str:
+def render_readme_results(
+    summary: dict[str, Any],
+    *,
+    hard: dict[str, Any] | None = None,
+) -> str:
     """README Results copied from one summary. No number is introduced here."""
     head = _headline(summary)
     integrity = summary.get("integrity") or {}
@@ -646,7 +684,7 @@ def render_readme_results(summary: dict[str, Any]) -> str:
     if integrity.get("started_dirty"):
         lines.append("started from a dirty tree")
         lines.append("")
-    hard_fp = integrity.get("hard_mode_fp") or head["hard_fp"]
+    hard_fp = _hard_headline(integrity, head, hard)
     lines.extend(
         [
             "| metric | value |",
@@ -666,6 +704,13 @@ def render_readme_results(summary: dict[str, Any]) -> str:
             "",
         ]
     )
+    if hard is not None:
+        commit = str((hard.get("meta") or {}).get("commit") or "")
+        lines.append(
+            "Hard-mode FP is copied from `bench/results/hard-clean/summary.json` "
+            f"at commit `{commit}`."
+        )
+        lines.append("")
     outcomes = summary.get("outcomes")
     if outcomes:
         lines.extend(["## Outcome breakdown", "", _outcome_lines(outcomes), ""])

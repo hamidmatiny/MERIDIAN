@@ -110,15 +110,23 @@ def _trace(
     """Log the node, then run it. A wall abort still gets an end line."""
     case = _case_label(state)
     attempt = _attempt_no(node, state)
+    from meridian.tracing import case_parent, finish_case, span
+
     node_line(state.run_id, case, node, attempt, clock.elapsed(), "start")
-    try:
-        result = body()
-    except Exception as exc:
-        if type(exc).__name__ != "GraphInterrupt":
-            node_line(state.run_id, case, node, attempt, clock.elapsed(), "end")
-        raise
-    node_line(state.run_id, case, node, attempt, clock.elapsed(), "end")
-    return result
+    parent = case_parent(str(state.run_id), case)
+    with span("meridian.node", parent=parent) as opened:
+        opened.set_attribute("node", node)
+        opened.set_attribute("attempt", attempt)
+        try:
+            result = body()
+        except Exception as exc:
+            if type(exc).__name__ != "GraphInterrupt":
+                node_line(state.run_id, case, node, attempt, clock.elapsed(), "end")
+            raise
+        node_line(state.run_id, case, node, attempt, clock.elapsed(), "end")
+        if node == "postmortem":
+            finish_case(str(state.run_id), case, {"cases": state.cases})
+        return result
 
 
 def _limited(clock: WallClock, action: Callable[[], dict[str, object]]) -> dict[str, object]:
