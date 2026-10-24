@@ -1,8 +1,8 @@
-# MERIDIAN
+# MERIDIAN — Multi-Agent Data-Incident Response (LangGraph, MCP, human-in-the-loop)
 
 [![CI](https://github.com/hamidmatiny/MERIDIAN/actions/workflows/ci.yml/badge.svg)](https://github.com/hamidmatiny/MERIDIAN/actions/workflows/ci.yml)
 
-MERIDIAN detects a data-quality failure, names a cause, proposes a patch, and checks that patch by replaying the failing partition. A human approves in Slack, or at the terminal in the demo, before anything is applied. The path is a fixed LangGraph state machine. The published bench numbers below are copied from the summary files, and the free tier is the default.
+MERIDIAN is a multi-agent LangGraph system for data-incident response: it detects data-quality failures in pipeline partitions with pandera, finds the root cause with read-only MCP tools, writes a fix, verifies it by replaying the failing partition in a Ray sandbox, and waits for human approval in Slack. A human approves in Slack, or at the terminal in the demo, before anything is applied. The path is a fixed LangGraph state machine. The published bench numbers below are copied from the summary files, and the free tier is the default.
 
 ## Architecture
 
