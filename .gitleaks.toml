@@ -1,0 +1,15 @@
+title = "MERIDIAN gitleaks config"
+
+# Every default rule stays on.
+[extend]
+useDefault = true
+
+# A bench record names its run as dataset__FAULT__iINTENSITY__sSEED under "run_key".
+# generic-api-key matches the "key" in the field name plus the value's entropy. The value is a
+# label, not a credential. Only that field, only in committed bench results, is allowed.
+[[allowlists]]
+description = "MERIDIAN-Bench run labels"
+condition = "AND"
+paths = ['''^bench/results/[^/]+/[^/]+\.json$''']
+regexTarget = "line"
+regexes = ['''^\s*"run_key": "[A-Za-z0-9_]+(?:__[A-Za-z0-9_.]+)*",?$''']

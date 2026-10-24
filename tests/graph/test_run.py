@@ -330,6 +330,10 @@ def test_live_aborts_before_work_when_no_method_exists(tmp_path: Path, monkeypat
 
     monkeypatch.setattr("meridian.run.plan_nodes", refuse)
     monkeypatch.setattr("meridian.run._prepare", explode)
+    # The model-size gate reads `ollama list`. CI has no Ollama, so give it sizes under the cap.
+    monkeypatch.setattr(
+        "meridian.run.read_ollama_sizes", lambda: {"qwen3.5:4b": 3.4, "gemma4:e4b": 3.3}
+    )
     code = main(
         [
             "--dataset",

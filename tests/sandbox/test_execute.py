@@ -5,7 +5,7 @@ import io
 import pandas as pd
 import pytest
 
-from meridian.sandbox.execute import _limit_memory, _worker, execute
+from meridian.sandbox.execute import _limit_memory, _restore_limit, _worker, execute
 
 
 def test_rejected_source_does_not_run() -> None:
@@ -160,7 +160,7 @@ def test_timeout_and_task_error_are_failures(monkeypatch) -> None:
 
 
 def test_mask_and_import_edges() -> None:
-    from meridian.sandbox.execute import _apply_limit, _apply_mask, _builtins
+    from meridian.sandbox.execute import _apply_limit, _apply_mask, _builtins, _restore_limit
 
     frame = pd.DataFrame({"speed_mps": [1.0, 2.0]})
     kept = _apply_mask(frame, pd.Series([True, False]))
@@ -169,7 +169,7 @@ def test_mask_and_import_edges() -> None:
         _apply_mask(frame, object())
     with pytest.raises(RuntimeError, match="length"):
         _apply_mask(frame, [True])
-    _apply_limit("linux", 8 * 1024 * 1024 * 1024)
+    _restore_limit(_apply_limit("linux", 8 * 1024 * 1024 * 1024))
     importer = _builtins(True)["__import__"]
     assert callable(importer)
     pandas = importer("pandas")
@@ -182,9 +182,9 @@ def test_mask_and_import_edges() -> None:
 
 def test_memory_limit_skips_the_address_space_cap_on_macos(monkeypatch) -> None:
     monkeypatch.setattr("sys.platform", "darwin")
-    _limit_memory(1024)
+    assert _limit_memory(1024) is None
 
 
 def test_memory_limit_is_best_effort_off_macos(monkeypatch) -> None:
     monkeypatch.setattr("sys.platform", "linux")
-    _limit_memory(8 * 1024 * 1024 * 1024)
+    _restore_limit(_limit_memory(8 * 1024 * 1024 * 1024))

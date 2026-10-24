@@ -158,3 +158,13 @@ def test_auth_failure_and_a_closed_port_are_distinct(monkeypatch: object) -> Non
     monkeypatch.setattr("meridian.doctor.urlopen", down)  # type: ignore[attr-defined]
     assert _ollama(settings) == "unreachable"
     assert main() == 0
+
+
+def test_a_missing_ollama_binary_reads_as_no_answer(monkeypatch: object) -> None:
+    def missing(*_args: object, **_kwargs: object) -> _Done:
+        raise FileNotFoundError("ollama")
+
+    monkeypatch.setattr("meridian.doctor.subprocess.run", missing)  # type: ignore[attr-defined]
+    monkeypatch.setattr("meridian.llm.resident.subprocess.run", missing)  # type: ignore[attr-defined]
+    assert _loaded() == "ollama command not found"
+    assert read_ollama_sizes() == {}

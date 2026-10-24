@@ -101,13 +101,19 @@ def _worker(
     allow_pandera: bool,
     memory_bytes: int,
 ) -> tuple[bytes, int, int]:
-    """Ray entry. Clears the environment, runs the source, returns parquet bytes."""
+    """Ray entry. Clears the environment, runs the source, returns parquet bytes.
+
+    The address-space cap covers only the untrusted source. Parquet decode and encode run
+    outside it: pyarrow's thread pool reserves address space that the cap would refuse.
+    """
     import os
     import tempfile
 
-    _limit_memory(memory_bytes)
     cwd = str(Path.cwd())
     saved = dict(os.environ)
+    frame = pd.read_parquet(io.BytesIO(payload))
+    rows_in = len(frame)
+    previous = _limit_memory(memory_bytes)
     try:
         os.environ.clear()
         with tempfile.TemporaryDirectory() as tmp:
@@ -117,8 +123,6 @@ def _worker(
             fn = namespace.get(entry)
             if not callable(fn):
                 raise RuntimeError(f"missing {entry}")
-            frame = pd.read_parquet(io.BytesIO(payload))
-            rows_in = len(frame)
             if entry == "check":
                 fn(frame)
                 out = frame
@@ -126,6 +130,8 @@ def _worker(
                 out = _apply_mask(frame, fn(frame))
             else:
                 out = fn(frame)
+            _restore_limit(previous)
+            previous = None
             if not isinstance(out, pd.DataFrame):
                 raise RuntimeError("remediation did not return a dataframe")
             blob = out.to_parquet(index=False)
@@ -133,6 +139,7 @@ def _worker(
     except (SchemaError, SchemaErrors) as exc:
         raise RuntimeError(f"schema check failed: {exc}") from None
     finally:
+        _restore_limit(previous)
         os.environ.clear()
         os.environ.update(saved)
         os.chdir(cwd)
@@ -159,22 +166,59 @@ def _ensure_ray(num_cpus: int) -> None:
     _WARMED_GENERATION = generation
 
 
-def _limit_memory(memory_bytes: int) -> None:
+def _limit_memory(memory_bytes: int) -> tuple[int, int] | None:
     """Ask the OS for an address-space cap. macOS does not honor a small one."""
-    _apply_limit(sys.platform, memory_bytes)
+    return _apply_limit(sys.platform, memory_bytes)
 
 
-def _apply_limit(platform: str, memory_bytes: int) -> None:
+def _apply_limit(platform: str, memory_bytes: int) -> tuple[int, int] | None:
+    """Allow ``memory_bytes`` of new address space above what the worker already maps.
+
+    Only the soft limit moves, so the worker can restore it after the task. Returns the
+    limits to restore, or None when no cap was set.
+    """
     import os
 
     if platform == "darwin" or os.environ.get("MERIDIAN_SANDBOX_RLIMIT", "1") == "0":
+        return None
+    mapped = _mapped_bytes()
+    if mapped is None:
+        return None
+    import resource
+
+    try:
+        previous = resource.getrlimit(resource.RLIMIT_AS)
+        hard = previous[1]
+        soft = mapped + memory_bytes
+        if hard != resource.RLIM_INFINITY:
+            soft = min(soft, hard)
+        resource.setrlimit(resource.RLIMIT_AS, (soft, hard))
+    except (ValueError, OSError):
+        return None
+    return (int(previous[0]), int(previous[1]))
+
+
+def _restore_limit(previous: tuple[int, int] | None) -> None:
+    if previous is None:
         return
     import resource
 
     try:
-        resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
+        resource.setrlimit(resource.RLIMIT_AS, previous)
     except (ValueError, OSError):
         return
+
+
+def _mapped_bytes() -> int | None:
+    """Address space this process already maps, from ``/proc``. None off Linux."""
+    import os
+
+    try:
+        with Path("/proc/self/statm").open(encoding="ascii") as handle:
+            pages = int(handle.read().split()[0])
+    except (OSError, ValueError, IndexError):
+        return None
+    return pages * os.sysconf("SC_PAGE_SIZE")
 
 
 def _apply_mask(frame: pd.DataFrame, mask: object) -> pd.DataFrame:

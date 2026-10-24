@@ -39,12 +39,15 @@ def parse_ollama_list(text: str) -> dict[str, float]:
 
 def read_ollama_sizes() -> dict[str, float]:
     """Sizes from ``ollama list``. An empty map means the command did not answer."""
-    completed = subprocess.run(
-        ["ollama", "list"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            ["ollama", "list"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return {}
     if completed.returncode != 0:
         return {}
     return parse_ollama_list(completed.stdout)

@@ -62,7 +62,7 @@ docker compose up -d
 docker compose logs meridian
 ```
 
-Open the Jaeger UI at [http://localhost:16686](http://localhost:16686) and look for the `meridian` service. Postgres holds the audit chain for that run. Live mode, when you choose it, reaches Ollama on the host at `http://host.docker.internal:11434`. Ollama itself is not containerized on macOS. The container sets `MERIDIAN_SANDBOX_RLIMIT=0`: on Linux the address-space cap stops a Ray worker from starting, and macOS does not apply that cap.
+Open the Jaeger UI at [http://localhost:16686](http://localhost:16686) and look for the `meridian` service. Postgres holds the audit chain for that run. Live mode, when you choose it, reaches Ollama on the host at `http://host.docker.internal:11434`. Ollama itself is not containerized on macOS. The container sets `MERIDIAN_SANDBOX_RLIMIT=0`, which turns the Linux address-space cap off for the demo. macOS does not apply that cap.
 
 ## Results
 

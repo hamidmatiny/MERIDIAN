@@ -167,12 +167,15 @@ def _memory() -> str:
 
 
 def _loaded() -> str:
-    completed = subprocess.run(
-        ["ollama", "ps"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            ["ollama", "ps"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return "ollama command not found"
     lines = [line for line in completed.stdout.splitlines() if line.strip()]
     if len(lines) <= 1:
         return "none"
