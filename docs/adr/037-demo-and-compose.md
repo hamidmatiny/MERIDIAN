@@ -10,7 +10,7 @@ A reviewer may have no Slack workspace, no Ollama, and no API key. They still ne
 
 ## Consequences
 
-The demo finishes without network access to a model. Jaeger at `localhost:16686` shows the demo trace. The demo does not measure model quality, and its output says so.
+The demo finishes without network access to a model. Jaeger at `localhost:16686` shows the demo trace. The demo does not measure model quality, and its output says so. Compose publishes Postgres on host port 5432 so `meridian.audit` can use the same database. The audit command loads `DATABASE_URL` from the environment file. An unset URL, or one the server refuses, still keeps the log in JSONL. When the gate shows an escalation, the terminal's `approve` is recorded as `ACKNOWLEDGED`, the same decision the Slack escalation button sends. Each demo case prints its outcome from the recorded decision: `APPROVED (applied)` only when this decision wrote its manifest, `ESCALATED (acknowledged, nothing applied)` for an acknowledged escalation, and `REJECTED (nothing applied)` for a rejection. A manifest left by an earlier run does not count as applied.
 
 ## Alternatives
 

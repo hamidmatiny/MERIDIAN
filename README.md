@@ -53,7 +53,7 @@ uv sync
 uv run python -m meridian.demo
 ```
 
-The first line is `fake models: demonstrates the pipeline, not model quality`. The demo injects `UNIT_MISMATCH` and `NULL_EXPLOSION`, runs the graph, and asks `approve` or `reject` in the terminal. A non-interactive shell approves. Applied patches and the postmortem land under `data/demo/`.
+The first line is `fake models: demonstrates the pipeline, not model quality`. The demo injects `UNIT_MISMATCH` and `NULL_EXPLOSION`, runs the graph, and asks `approve` or `reject` in the terminal for each case. A non-interactive shell answers `approve`. A verified patch is then labeled `APPROVED (applied)`. A case the gate escalated has no patch to apply: `approve` records an acknowledgement, and the case is labeled `ESCALATED (acknowledged, nothing applied)`. Applied patches and the postmortems land under `data/demo/`.
 
 `make demo`, `make test`, `make bench-dev`, and `make verify-audit` wrap the same commands.
 
@@ -72,6 +72,10 @@ Numbers below are copied from `bench/results/test-fix-v2-clean/summary.json`. Th
 
 The earlier run in [bench/results/test-fix-v2/REPORT.md](bench/results/test-fix-v2/REPORT.md) is a dirty-tree run, superseded.
 
+Results committed in `7e7f9f5`.
+Recorded at commit `c56af95d45cedb380a803d820a5d2dd4058fc422`.
+Models: critic `gemma4:12b`, fix `qwen3.5:27b-q4_K_M`, root_cause `qwen3.5:27b-q4_K_M`, triage `qwen3.5:27b-q4_K_M`.
+
 | metric | value |
 | --- | --- |
 | detection recall | 72/72 |
@@ -83,8 +87,8 @@ The earlier run in [bench/results/test-fix-v2/REPORT.md](bench/results/test-fix-
 | false-fix rate | 0/27 |
 | escalation rate | 17/72 |
 | critic confusion matrix | approved 33/16; rejected 1/9 |
-| machine time p50 | 288.367448 |
-| machine time p95 | 498.95234 |
+| machine time p50 | 288 s |
+| machine time p95 | 499 s |
 | USD per run | 0.0 |
 
 Hard-mode FP is copied from `bench/results/hard-clean/summary.json` at commit `7e7f9f5e80eb1a0ebf779b6bc815be7a52b40afa`.

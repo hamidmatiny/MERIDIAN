@@ -1,6 +1,6 @@
 [project]
 name = "meridian"
-version = "1.0.0"
+version = "1.0.1"
 description = "Autonomous data-incident response system"
 readme = "README.md"
 license = "Apache-2.0"

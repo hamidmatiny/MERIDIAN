@@ -80,6 +80,7 @@ def test_note_before_install_writes_nothing(
 def test_verify_cli_reports_jsonl_and_a_break(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    monkeypatch.setattr("meridian.audit.__main__.load_dotenv", lambda *args, **kwargs: False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
     try:
         (tmp_path / "slack.jsonl").write_text(
@@ -115,6 +116,7 @@ def test_sqlite_install_verifies_clean(tmp_path: Path) -> None:
 def test_verify_cli_uses_sqlite_and_reports_a_missing_store(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    monkeypatch.setattr("meridian.audit.__main__.load_dotenv", lambda *args, **kwargs: False)
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'audit.db'}")
     try:
         assert audit_main(["verify", "--dir", str(tmp_path)]) == 0

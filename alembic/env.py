@@ -1,9 +1,10 @@
-"""Alembic uses DATABASE_URL when it is set."""
+"""Alembic uses DATABASE_URL when it is set, from the environment or ``.env``."""
 
 import os
 from logging.config import fileConfig
 
 from alembic import context
+from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
 
 from meridian.audit.schema import metadata
@@ -13,6 +14,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = metadata
+load_dotenv(override=False)
 url = os.environ.get("DATABASE_URL", "").strip()
 if url.startswith("postgresql://"):
     url = "postgresql+psycopg://" + url.removeprefix("postgresql://")

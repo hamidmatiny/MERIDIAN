@@ -1,8 +1,11 @@
 """``python -m meridian.audit verify`` walks the hash chain."""
 
 import argparse
+import os
 import sys
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 from meridian.audit.store import broken, install_from_env, sql_store, verify_sql, verify_tree
 
@@ -13,7 +16,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dir", default="data/audit", dest="directory")
     args = parser.parse_args(argv)
     directory = Path(args.directory)
+    load_dotenv(override=False)
+    url = os.environ.get("DATABASE_URL", "").strip()
     kind = install_from_env(directory)
+    if kind == "jsonl" and url:
+        print("DATABASE_URL did not accept a connection", file=sys.stderr)
     if kind == "postgres":
         store = sql_store()
         if store is None:

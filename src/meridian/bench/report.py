@@ -685,6 +685,7 @@ def render_readme_results(
         lines.append("started from a dirty tree")
         lines.append("")
     hard_fp = _hard_headline(integrity, head, hard)
+    lines.extend(_run_identity(summary))
     lines.extend(
         [
             "| metric | value |",
@@ -698,8 +699,8 @@ def render_readme_results(
             f"| false-fix rate | {_show(head['false_fix'])} |",
             f"| escalation rate | {_show(head['escalation'])} |",
             f"| critic confusion matrix | {_matrix_cell(head.get('critic_matrix'))} |",
-            f"| machine time p50 | {head['machine_time_p50']} |",
-            f"| machine time p95 | {head['machine_time_p95']} |",
+            f"| machine time p50 | {_seconds(head['machine_time_p50'])} |",
+            f"| machine time p95 | {_seconds(head['machine_time_p95'])} |",
             f"| USD per run | {head['usd_per_run']} |",
             "",
         ]
@@ -766,6 +767,29 @@ def _readme_comparison(summary: dict[str, Any]) -> str:
         for key in keys
     ]
     return "\n".join([header, rule, *body])
+
+
+def _seconds(value: object) -> str:
+    """Machine time for the README, in whole seconds."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return _show(value)
+    return f"{round(float(value))} s"
+
+
+def _run_identity(summary: dict[str, Any]) -> list[str]:
+    """Commit and model tags copied from the summary, placed beside the results table."""
+    meta = summary.get("meta") or {}
+    lines: list[str] = []
+    commit = meta.get("commit")
+    if commit:
+        lines.append(f"Recorded at commit `{commit}`.")
+    models = meta.get("models")
+    if isinstance(models, dict) and models:
+        tags = ", ".join(f"{name} `{models[name]}`" for name in sorted(models))
+        lines.append(f"Models: {tags}.")
+    if lines:
+        lines.append("")
+    return lines
 
 
 def _show(value: object) -> str:

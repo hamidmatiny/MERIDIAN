@@ -3,6 +3,7 @@
 ``fake models: demonstrates the pipeline, not model quality``
 """
 
+import json
 import os
 import sys
 import time
@@ -16,12 +17,15 @@ from langgraph.types import Command
 
 from meridian.agents.ray_runtime import shared_ray
 from meridian.audit.store import install_from_env, note
+from meridian.contracts.approval import ApprovalOutcome
 from meridian.contracts.fault_type import FaultType
+from meridian.contracts.incident_case import IncidentCase
 from meridian.contracts.state import MeridianState
 from meridian.graph.build import build_graph
 from meridian.mcp_servers.client import inprocess_tools
 from meridian.run import PreparedChats, _chat, _prepare
-from meridian.slack.gate import ApprovalPorts
+from meridian.slack.audit import AuditLog
+from meridian.slack.gate import ApprovalPorts, _needs_escalation
 from meridian.slack.gateway import RecordingGateway
 from meridian.slack.store import MessageLog, OpenIndex
 from meridian.tracing import enabled as tracing_enabled
@@ -54,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run_fault(
     folder: Path, fault: FaultType, *, seed: int, chats: PreparedChats, rows: int
-) -> None:
+) -> IncidentCase | None:
     folder.mkdir(parents=True, exist_ok=True)
     prepared = _prepare(
         folder,
@@ -71,6 +75,7 @@ def _run_fault(
         postmortem_root=folder / "postmortems",
         channel="console",
         open_index=OpenIndex(folder / "open.json"),
+        audit=AuditLog(folder / "slack.jsonl"),
     )
     run_id = uuid4()
     config: dict[str, Any] = {
@@ -107,21 +112,46 @@ def _run_fault(
                     raise
                 result = None
             if result is None or _paused(result):
-                _resume(graph, config, _ask())
+                escalation = _escalating(graph.get_state(config).values)  # type: ignore[arg-type]
+                _resume(graph, config, _ask(escalation=escalation), escalation=escalation)
+            final = graph.get_state(config).values  # type: ignore[arg-type]
             note(
                 "runs",
                 {"run_id": str(run_id), "dataset": "vehicle_telemetry", "fault": fault.value},
             )
+    case = _case(final)
+    print(f"outcome={_outcome(case, folder / 'applied')}", flush=True)
     print(f"applied={_names(folder / 'applied')}", flush=True)
     print(f"postmortem={_names(folder / 'postmortems')}", flush=True)
+    return case
 
 
 def _paused(result: object) -> bool:
     return isinstance(result, dict) and bool(result.get("__interrupt__"))
 
 
-def _resume(graph: Any, config: dict[str, Any], choice: str) -> None:
-    decision = "APPROVED" if choice == "approve" else "REJECTED"
+def _case(values: object) -> IncidentCase | None:
+    """The one case on a demo run, from the graph state."""
+    cases = values.get("cases") if isinstance(values, dict) else None
+    if not isinstance(cases, dict) or len(cases) != 1:
+        return None
+    case = next(iter(cases.values()))
+    return case if isinstance(case, IncidentCase) else None
+
+
+def _escalating(values: object) -> bool:
+    """The gate showed an escalation, which Slack can only acknowledge."""
+    case = _case(values)
+    return case is None or _needs_escalation(case)
+
+
+def _resume(graph: Any, config: dict[str, Any], choice: str, *, escalation: bool) -> None:
+    if choice != "approve":
+        decision = "REJECTED"
+    elif escalation:
+        decision = "ACKNOWLEDGED"
+    else:
+        decision = "APPROVED"
     payload = {
         "decision": decision,
         "approver": "console",
@@ -131,9 +161,12 @@ def _resume(graph: Any, config: dict[str, Any], choice: str) -> None:
     graph.invoke(Command(resume=payload), config)
 
 
-def _ask() -> str:
+def _ask(*, escalation: bool = False) -> str:
     forced = os.environ.get("MERIDIAN_DEMO_DECISION", "").strip().lower()
-    print("approval prompt: type approve or reject", flush=True)
+    if escalation:
+        print("escalation prompt: type approve to acknowledge, or reject", flush=True)
+    else:
+        print("approval prompt: type approve or reject", flush=True)
     if forced in {"approve", "reject"}:
         print(forced, flush=True)
         return forced
@@ -145,6 +178,23 @@ def _ask() -> str:
         if answer in {"approve", "reject"}:
             return answer
         print("type approve or reject")
+
+
+def _outcome(case: IncidentCase | None, applied: Path) -> str:
+    """APPROVED only when this decision wrote its manifest. An older run's file does not count."""
+    decision = case.approval if case is not None else None
+    if case is None or decision is None:
+        return "ESCALATED (no decision, nothing applied)"
+    if decision.decision is ApprovalOutcome.APPROVED:
+        manifest = applied / str(case.incident.id) / "manifest.json"
+        if manifest.is_file():
+            written = json.loads(manifest.read_text(encoding="utf-8"))
+            if written.get("decided_at") == decision.decided_at.isoformat():
+                return "APPROVED (applied)"
+        return "APPROVED (nothing applied)"
+    if decision.decision is ApprovalOutcome.REJECTED:
+        return "REJECTED (nothing applied)"
+    return "ESCALATED (acknowledged, nothing applied)"
 
 
 def _names(folder: Path) -> str:
